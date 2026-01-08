@@ -1,7 +1,7 @@
 <div align="center">
   <h1> ♥ 大市修 ♥ <br/> PC-NSF-HifiGAN Pitch Editor </h1>
 
-  <img src="logo.jpg" alt="Logo" width="300" />
+  <img src="logo.png" alt="Logo" width="300" />
 
   <p>
     <em>大市修于市，音符修于心</em>
