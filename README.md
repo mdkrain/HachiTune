@@ -19,13 +19,16 @@ A Melodyne-like pitch editing application built with JUCE framework, designed fo
 - JUCE framework (will be cloned as submodule)
 
 ### Windows
+
 - Visual Studio 2019 or later with C++ workload
 - Windows SDK
 
 ### macOS
+
 - Xcode with command line tools
 
 ### Linux
+
 - GCC or Clang
 - ALSA development libraries
 
