@@ -13,7 +13,8 @@
 #include "SettingsComponent.h"
 
 class MainComponent : public juce::Component,
-                      public juce::Timer
+                      public juce::Timer,
+                      public juce::KeyListener
 {
 public:
     MainComponent();
@@ -23,6 +24,9 @@ public:
     void resized() override;
     
     void timerCallback() override;
+    
+    // KeyListener
+    bool keyPressed(const juce::KeyPress& key, juce::Component* originatingComponent) override;
     
 private:
     void openFile();
@@ -44,6 +48,9 @@ private:
     void loadAudioFile(const juce::File& file);
     void analyzeAudio();
     void segmentIntoNotes();
+    
+    void loadConfig();
+    void saveConfig();
     
     std::unique_ptr<Project> project;
     std::unique_ptr<AudioEngine> audioEngine;

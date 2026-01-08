@@ -2,6 +2,7 @@
 
 #include "../JuceHeader.h"
 #include "../Models/Note.h"
+#include "../Models/Project.h"
 #include "../Utils/Constants.h"
 
 class ParameterPanel : public juce::Component,
@@ -17,18 +18,29 @@ public:
     void sliderValueChanged(juce::Slider* slider) override;
     void sliderDragEnded(juce::Slider* slider) override;
     
+    void setProject(Project* proj);
     void setSelectedNote(Note* note);
     void updateFromNote();
+    void updateGlobalSliders();
+    
+    // Loading status
+    void setLoadingStatus(const juce::String& status);
+    void clearLoadingStatus();
     
     std::function<void()> onParameterChanged;
     std::function<void()> onParameterEditFinished;  // Called when slider drag ends
+    std::function<void()> onGlobalPitchChanged;
     
 private:
     void setupSlider(juce::Slider& slider, juce::Label& label, 
                     const juce::String& name, double min, double max, double def);
     
+    Project* project = nullptr;
     Note* selectedNote = nullptr;
     bool isUpdating = false;  // Prevent feedback loops
+    
+    // Loading status
+    juce::Label loadingStatusLabel;
     
     // Note info
     juce::Label noteInfoLabel;

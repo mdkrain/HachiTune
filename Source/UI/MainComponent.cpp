@@ -78,6 +78,10 @@ MainComponent::MainComponent()
     // Setup parameter panel callbacks
     parameterPanel.onParameterChanged = [this]() { onPitchEdited(); };
     parameterPanel.onParameterEditFinished = [this]() { resynthesizeIncremental(); };
+    parameterPanel.onGlobalPitchChanged = [this]() { 
+        pianoRoll.repaint();  // Update display
+    };
+    parameterPanel.setProject(project.get());
     
     // Setup audio engine callbacks
     audioEngine->setPositionCallback([this](double position)
@@ -103,12 +107,21 @@ MainComponent::MainComponent()
     pianoRoll.setProject(project.get());
     waveform.setProject(project.get());
     
+    // Add keyboard listener
+    addKeyListener(this);
+    setWantsKeyboardFocus(true);
+    
+    // Load config
+    loadConfig();
+    
     // Start timer for UI updates
     startTimerHz(30);
 }
 
 MainComponent::~MainComponent()
 {
+    saveConfig();
+    removeKeyListener(this);
     stopTimer();
     audioEngine->shutdownAudio();
 }
@@ -141,6 +154,45 @@ void MainComponent::timerCallback()
     // The position updates are handled by the audio engine callback
 }
 
+bool MainComponent::keyPressed(const juce::KeyPress& key, juce::Component* /*originatingComponent*/)
+{
+    // Space bar: toggle play/pause
+    if (key == juce::KeyPress::spaceKey)
+    {
+        if (isPlaying)
+            pause();
+        else
+            play();
+        return true;
+    }
+    
+    // Escape: stop
+    if (key == juce::KeyPress::escapeKey)
+    {
+        stop();
+        return true;
+    }
+    
+    // Home: go to start
+    if (key == juce::KeyPress::homeKey)
+    {
+        seek(0.0);
+        return true;
+    }
+    
+    // End: go to end
+    if (key == juce::KeyPress::endKey)
+    {
+        if (project)
+        {
+            seek(project->getAudioData().getDuration());
+        }
+        return true;
+    }
+    
+    return false;
+}
+
 void MainComponent::openFile()
 {
     fileChooser = std::make_unique<juce::FileChooser>(
@@ -164,6 +216,8 @@ void MainComponent::openFile()
 
 void MainComponent::loadAudioFile(const juce::File& file)
 {
+    parameterPanel.setLoadingStatus("Loading audio...");
+    
     juce::AudioFormatManager formatManager;
     formatManager.registerBasicFormats();
     
@@ -239,12 +293,15 @@ void MainComponent::loadAudioFile(const juce::File& file)
         audioData.waveform = std::move(buffer);
         audioData.sampleRate = SAMPLE_RATE;
         
+        parameterPanel.setLoadingStatus("Analyzing audio...");
+        
         // Analyze audio
         analyzeAudio();
         
         // Update UI
         pianoRoll.setProject(project.get());
         waveform.setProject(project.get());
+        parameterPanel.setProject(project.get());
         toolbar.setTotalTime(audioData.getDuration());
         
         // Set audio to engine
@@ -254,7 +311,13 @@ void MainComponent::loadAudioFile(const juce::File& file)
         originalWaveform.makeCopyOf(audioData.waveform);
         hasOriginalWaveform = true;
         
+        parameterPanel.clearLoadingStatus();
+        
         repaint();
+    }
+    else
+    {
+        parameterPanel.clearLoadingStatus();
     }
 }
 
@@ -511,6 +574,7 @@ void MainComponent::resynthesize()
     
     // Show progress indicator
     toolbar.setEnabled(false);
+    parameterPanel.setLoadingStatus("Synthesizing...");
     
     // Get adjusted F0
     std::vector<float> adjustedF0 = project->getAdjustedF0();
@@ -523,6 +587,7 @@ void MainComponent::resynthesize()
         {
             // Re-enable toolbar
             toolbar.setEnabled(true);
+            parameterPanel.clearLoadingStatus();
             
             if (synthesizedAudio.empty())
             {
@@ -609,6 +674,7 @@ void MainComponent::resynthesizeIncremental()
     
     // Disable toolbar during synthesis
     toolbar.setEnabled(false);
+    parameterPanel.setLoadingStatus("Preview...");
     
     // Calculate sample positions
     int hopSize = vocoder->getHopSize();
@@ -627,6 +693,7 @@ void MainComponent::resynthesizeIncremental()
         (std::vector<float> synthesizedAudio)
         {
             toolbar.setEnabled(true);
+            parameterPanel.clearLoadingStatus();
             
             if (synthesizedAudio.empty())
             {
@@ -850,4 +917,58 @@ void MainComponent::applySettings()
             vocoder->reloadModel();
         }
     }
+}
+
+void MainComponent::loadConfig()
+{
+    auto configFile = juce::File::getSpecialLocation(juce::File::currentExecutableFile)
+                          .getParentDirectory()
+                          .getChildFile("config.json");
+    
+    if (configFile.existsAsFile())
+    {
+        auto configText = configFile.loadFileAsString();
+        auto config = juce::JSON::parse(configText);
+        
+        if (config.isObject())
+        {
+            auto configObj = config.getDynamicObject();
+            if (configObj)
+            {
+                // Load last opened file path (for future use)
+                // juce::String lastFile = configObj->getProperty("lastFile").toString();
+                
+                // Load window size (for future use)
+                // int width = configObj->getProperty("windowWidth");
+                // int height = configObj->getProperty("windowHeight");
+                
+                DBG("Config loaded from: " + configFile.getFullPathName());
+            }
+        }
+    }
+}
+
+void MainComponent::saveConfig()
+{
+    auto configFile = juce::File::getSpecialLocation(juce::File::currentExecutableFile)
+                          .getParentDirectory()
+                          .getChildFile("config.json");
+    
+    auto config = new juce::DynamicObject();
+    
+    // Save last opened file path
+    if (project && project->getFilePath().existsAsFile())
+    {
+        config->setProperty("lastFile", project->getFilePath().getFullPathName());
+    }
+    
+    // Save window size
+    config->setProperty("windowWidth", getWidth());
+    config->setProperty("windowHeight", getHeight());
+    
+    // Write to file
+    juce::String jsonText = juce::JSON::toString(juce::var(config));
+    configFile.replaceWithText(jsonText);
+    
+    DBG("Config saved to: " + configFile.getFullPathName());
 }

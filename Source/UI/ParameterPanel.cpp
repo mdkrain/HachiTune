@@ -2,6 +2,14 @@
 
 ParameterPanel::ParameterPanel()
 {
+    // Loading status label
+    addAndMakeVisible(loadingStatusLabel);
+    loadingStatusLabel.setColour(juce::Label::textColourId, juce::Colour(0xFFFFD700));
+    loadingStatusLabel.setColour(juce::Label::backgroundColourId, juce::Colour(0x40000000));
+    loadingStatusLabel.setJustificationType(juce::Justification::centred);
+    loadingStatusLabel.setFont(juce::Font(13.0f, juce::Font::bold));
+    loadingStatusLabel.setVisible(false);
+    
     // Note info
     addAndMakeVisible(noteInfoLabel);
     noteInfoLabel.setColour(juce::Label::textColourId, juce::Colours::white);
@@ -26,7 +34,8 @@ ParameterPanel::ParameterPanel()
     // Volume and formant sliders disabled (not implemented yet)
     volumeSlider.setEnabled(false);
     formantShiftSlider.setEnabled(false);
-    globalPitchSlider.setEnabled(false);
+    // Global pitch slider is now enabled!
+    globalPitchSlider.setEnabled(true);
 }
 
 ParameterPanel::~ParameterPanel()
@@ -66,6 +75,10 @@ void ParameterPanel::paint(juce::Graphics& g)
 void ParameterPanel::resized()
 {
     auto bounds = getLocalBounds().reduced(10);
+    
+    // Loading status at top
+    loadingStatusLabel.setBounds(bounds.removeFromTop(24));
+    bounds.removeFromTop(5);
     
     // Note info
     noteInfoLabel.setBounds(bounds.removeFromTop(30));
@@ -111,6 +124,13 @@ void ParameterPanel::sliderValueChanged(juce::Slider* slider)
         if (onParameterChanged)
             onParameterChanged();
     }
+    else if (slider == &globalPitchSlider && project)
+    {
+        project->setGlobalPitchOffset(static_cast<float>(slider->getValue()));
+        
+        if (onGlobalPitchChanged)
+            onGlobalPitchChanged();
+    }
 }
 
 void ParameterPanel::sliderDragEnded(juce::Slider* slider)
@@ -121,6 +141,18 @@ void ParameterPanel::sliderDragEnded(juce::Slider* slider)
         if (onParameterEditFinished)
             onParameterEditFinished();
     }
+    else if (slider == &globalPitchSlider && project)
+    {
+        // Global pitch changed, need full resynthesis
+        if (onParameterEditFinished)
+            onParameterEditFinished();
+    }
+}
+
+void ParameterPanel::setProject(Project* proj)
+{
+    project = proj;
+    updateGlobalSliders();
 }
 
 void ParameterPanel::setSelectedNote(Note* note)
@@ -157,4 +189,35 @@ void ParameterPanel::updateFromNote()
     }
     
     isUpdating = false;
+}
+
+void ParameterPanel::updateGlobalSliders()
+{
+    isUpdating = true;
+    
+    if (project)
+    {
+        globalPitchSlider.setValue(project->getGlobalPitchOffset());
+        globalPitchSlider.setEnabled(true);
+    }
+    else
+    {
+        globalPitchSlider.setValue(0.0);
+        globalPitchSlider.setEnabled(false);
+    }
+    
+    isUpdating = false;
+}
+
+void ParameterPanel::setLoadingStatus(const juce::String& status)
+{
+    loadingStatusLabel.setText(status, juce::dontSendNotification);
+    loadingStatusLabel.setVisible(true);
+    repaint();
+}
+
+void ParameterPanel::clearLoadingStatus()
+{
+    loadingStatusLabel.setVisible(false);
+    repaint();
 }
