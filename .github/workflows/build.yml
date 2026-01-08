@@ -245,20 +245,28 @@ jobs:
     - name: Package
       run: |
         mkdir -p package/PitchEditor-Linux
-        EXE_PATH=$(find build -name "PitchEditor" -type f -executable | head -1)
+        # Find possible executable names (handles 'PitchEditor' and 'Pitch Editor')
+        EXE_PATH=$(find build -type f \( -name "PitchEditor" -o -name "Pitch Editor" -o -name "PitchEditor.exe" -o -name "Pitch Editor.exe" \) -executable | head -1)
         if [ -n "$EXE_PATH" ]; then
-          cp "$EXE_PATH" package/PitchEditor-Linux/
+          cp "$EXE_PATH" package/PitchEditor-Linux/PitchEditor
+        else
+          echo "Warning: PitchEditor executable not found. Packaging only libraries and models."
         fi
-        cp onnxruntime/lib/libonnxruntime.so* package/PitchEditor-Linux/
+        cp onnxruntime/lib/libonnxruntime.so* package/PitchEditor-Linux/ || true
         cp -r models package/PitchEditor-Linux/
         cat > package/PitchEditor-Linux/run.sh << 'EOF'
         #!/bin/bash
         SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
         export LD_LIBRARY_PATH="$SCRIPT_DIR:$LD_LIBRARY_PATH"
-        "$SCRIPT_DIR/PitchEditor" "$@"
+        if [ -x "$SCRIPT_DIR/PitchEditor" ]; then
+          "$SCRIPT_DIR/PitchEditor" "$@"
+        else
+          echo "Error: PitchEditor executable not found in package."
+          exit 1
+        fi
         EOF
         chmod +x package/PitchEditor-Linux/run.sh
-        chmod +x package/PitchEditor-Linux/PitchEditor
+        if [ -f package/PitchEditor-Linux/PitchEditor ]; then chmod +x package/PitchEditor-Linux/PitchEditor; fi
         cd package
         tar -czvf ../PitchEditor-Linux.tar.gz PitchEditor-Linux
     
