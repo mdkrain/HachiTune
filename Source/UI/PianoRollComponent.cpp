@@ -364,7 +364,8 @@ void PianoRollComponent::mouseDown(const juce::MouseEvent& e)
         isDrawing = true;
         lastDrawX = 0.0f;
         lastDrawY = 0.0f;
-        drawingChanges.clear();
+        drawingEdits.clear();
+        drawingEditIndexByFrame.clear();
         
         applyPitchDrawing(adjustedX, adjustedY);
         
@@ -717,15 +718,36 @@ void PianoRollComponent::applyPitchDrawing(float x, float y)
     // Convert time to frame index
     int frameIndex = static_cast<int>(secondsToFrames(static_cast<float>(time)));
     
+    auto applyFrame = [&](int idx, float newFreq)
+    {
+        if (idx < 0 || idx >= static_cast<int>(audioData.f0.size()))
+            return;
+
+        const float oldF0 = audioData.f0[idx];
+        const bool oldVoiced = (idx < static_cast<int>(audioData.voicedMask.size())) ? audioData.voicedMask[idx] : false;
+
+        auto it = drawingEditIndexByFrame.find(idx);
+        if (it == drawingEditIndexByFrame.end())
+        {
+            drawingEditIndexByFrame.emplace(idx, drawingEdits.size());
+            drawingEdits.push_back(F0FrameEdit { idx, oldF0, newFreq, oldVoiced, true });
+        }
+        else
+        {
+            auto& e = drawingEdits[it->second];
+            e.newF0 = newFreq;
+            e.newVoiced = true;
+        }
+
+        // Apply the change immediately
+        audioData.f0[idx] = newFreq;
+        if (idx < static_cast<int>(audioData.voicedMask.size()))
+            audioData.voicedMask[idx] = true;
+    };
+
     if (frameIndex >= 0 && frameIndex < static_cast<int>(audioData.f0.size()))
     {
-        // Store the change for undo
-        drawingChanges.push_back({frameIndex, freq});
-        
-        // Apply the change immediately
-        audioData.f0[frameIndex] = freq;
-        if (frameIndex < static_cast<int>(audioData.voicedMask.size()))
-            audioData.voicedMask[frameIndex] = true;
+        applyFrame(frameIndex, freq);
         
         // Interpolate between last draw position and current
         if (lastDrawX > 0 && lastDrawY > 0)
@@ -741,16 +763,9 @@ void PianoRollComponent::applyPitchDrawing(float x, float y)
             
             for (int f = startFrame + 1; f < endFrame; ++f)
             {
-                if (f >= 0 && f < static_cast<int>(audioData.f0.size()))
-                {
-                    float t = static_cast<float>(f - startFrame) / static_cast<float>(endFrame - startFrame);
-                    float interpFreq = lastFreq * (1.0f - t) + freq * t;
-                    
-                    drawingChanges.push_back({f, interpFreq});
-                    audioData.f0[f] = interpFreq;
-                    if (f < static_cast<int>(audioData.voicedMask.size()))
-                        audioData.voicedMask[f] = true;
-                }
+                float t = static_cast<float>(f - startFrame) / static_cast<float>(endFrame - startFrame);
+                float interpFreq = lastFreq * (1.0f - t) + freq * t;
+                applyFrame(f, interpFreq);
             }
         }
         
@@ -761,15 +776,15 @@ void PianoRollComponent::applyPitchDrawing(float x, float y)
 
 void PianoRollComponent::commitPitchDrawing()
 {
-    if (drawingChanges.empty()) return;
+    if (drawingEdits.empty()) return;
     
     // Calculate the dirty frame range from the changes
     int minFrame = std::numeric_limits<int>::max();
     int maxFrame = std::numeric_limits<int>::min();
-    for (const auto& change : drawingChanges)
+    for (const auto& e : drawingEdits)
     {
-        minFrame = std::min(minFrame, change.first);  // first = frameIndex
-        maxFrame = std::max(maxFrame, change.first);
+        minFrame = std::min(minFrame, e.idx);
+        maxFrame = std::max(maxFrame, e.idx);
     }
     
     // Set F0 dirty range in project for incremental synthesis
@@ -782,11 +797,12 @@ void PianoRollComponent::commitPitchDrawing()
     if (undoManager && project)
     {
         auto& audioData = project->getAudioData();
-        auto action = std::make_unique<F0EditAction>(&audioData.f0, drawingChanges);
+        auto action = std::make_unique<F0EditAction>(&audioData.f0, &audioData.voicedMask, drawingEdits);
         undoManager->addAction(std::move(action));
     }
     
-    drawingChanges.clear();
+    drawingEdits.clear();
+    drawingEditIndexByFrame.clear();
     lastDrawX = 0.0f;
     lastDrawY = 0.0f;
     

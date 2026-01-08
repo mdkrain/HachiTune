@@ -5,6 +5,8 @@
 #include "../Utils/Constants.h"
 #include "../Utils/UndoManager.h"
 
+#include <unordered_map>
+
 class PitchUndoManager;
 
 /**
@@ -116,7 +118,8 @@ private:
     
     // Pitch drawing state
     bool isDrawing = false;
-    std::vector<std::pair<int, float>> drawingChanges;  // {frameIndex, newF0}
+    std::vector<F0FrameEdit> drawingEdits;  // unique edits per frame
+    std::unordered_map<int, size_t> drawingEditIndexByFrame;
     float lastDrawX = 0.0f;
     float lastDrawY = 0.0f;
     

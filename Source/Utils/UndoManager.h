@@ -40,41 +40,44 @@ private:
 /**
  * Action for changing multiple F0 values (hand-drawing).
  */
+struct F0FrameEdit
+{
+    int idx = -1;
+    float oldF0 = 0.0f;
+    float newF0 = 0.0f;
+    bool oldVoiced = false;
+    bool newVoiced = false;
+};
+
 class F0EditAction : public UndoableAction
 {
 public:
-    F0EditAction(std::vector<float>* f0Array, 
-                 const std::vector<std::pair<int, float>>& changes)
-        : f0Array(f0Array)
-    {
-        // Store old values
-        for (const auto& [idx, newVal] : changes)
-        {
-            if (idx >= 0 && idx < static_cast<int>(f0Array->size()))
-            {
-                oldValues.push_back({idx, (*f0Array)[idx]});
-                newValues.push_back({idx, newVal});
-            }
-        }
-    }
+    F0EditAction(std::vector<float>* f0Array,
+                 std::vector<bool>* voicedMask,
+                 std::vector<F0FrameEdit> edits)
+        : f0Array(f0Array), voicedMask(voicedMask), edits(std::move(edits)) {}
     
     void undo() override
     {
         if (!f0Array) return;
-        for (const auto& [idx, val] : oldValues)
+        for (const auto& e : edits)
         {
-            if (idx >= 0 && idx < static_cast<int>(f0Array->size()))
-                (*f0Array)[idx] = val;
+            if (e.idx >= 0 && e.idx < static_cast<int>(f0Array->size()))
+                (*f0Array)[e.idx] = e.oldF0;
+            if (voicedMask && e.idx >= 0 && e.idx < static_cast<int>(voicedMask->size()))
+                (*voicedMask)[e.idx] = e.oldVoiced;
         }
     }
     
     void redo() override
     {
         if (!f0Array) return;
-        for (const auto& [idx, val] : newValues)
+        for (const auto& e : edits)
         {
-            if (idx >= 0 && idx < static_cast<int>(f0Array->size()))
-                (*f0Array)[idx] = val;
+            if (e.idx >= 0 && e.idx < static_cast<int>(f0Array->size()))
+                (*f0Array)[e.idx] = e.newF0;
+            if (voicedMask && e.idx >= 0 && e.idx < static_cast<int>(voicedMask->size()))
+                (*voicedMask)[e.idx] = e.newVoiced;
         }
     }
     
@@ -82,8 +85,8 @@ public:
     
 private:
     std::vector<float>* f0Array;
-    std::vector<std::pair<int, float>> oldValues;
-    std::vector<std::pair<int, float>> newValues;
+    std::vector<bool>* voicedMask;
+    std::vector<F0FrameEdit> edits;
 };
 
 /**
