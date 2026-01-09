@@ -838,9 +838,7 @@ void MainComponent::stop()
     isPlaying = false;
     toolbar.setPlaying(false);
     audioEngine->stop();
-
-    pianoRoll.setCursorTime(0.0);
-    toolbar.setCurrentTime(0.0);
+    // Keep cursor at current position - user can press Home to go to start
 }
 
 void MainComponent::seek(double time)
