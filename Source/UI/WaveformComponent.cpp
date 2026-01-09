@@ -1,4 +1,5 @@
 #include "WaveformComponent.h"
+#include "../Utils/Constants.h"
 
 WaveformComponent::WaveformComponent()
 {
@@ -92,8 +93,15 @@ void WaveformComponent::drawCursor(juce::Graphics& g)
 
     if (x >= 0 && x < bounds.getWidth())
     {
-        g.setColour(juce::Colour(0x00, 0xD4, 0xFF));  // Bright cyan
-        g.fillRect(x - 1.0f, 0.0f, 2.0f, static_cast<float>(bounds.getHeight()));
+        float height = static_cast<float>(bounds.getHeight());
+
+        // White border
+        g.setColour(juce::Colours::white);
+        g.fillRect(x - 1.5f, 0.0f, 3.0f, height);
+
+        // Accent fill
+        g.setColour(juce::Colour(COLOR_PRIMARY));
+        g.fillRect(x - 0.5f, 0.0f, 1.0f, height);
     }
 }
 
