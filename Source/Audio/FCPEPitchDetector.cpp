@@ -149,21 +149,16 @@ bool FCPEPitchDetector::loadModel(const juce::File& modelPath,
         sessionOptions.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
 
         // Configure execution provider based on GPU settings
-#ifdef _WIN32
+#if defined(_WIN32) && defined(USE_DIRECTML)
         if (provider == GPUProvider::DirectML)
         {
             // DirectML for Windows (AMD/Intel/NVIDIA)
             OrtSessionOptionsAppendExecutionProvider_DML(sessionOptions, deviceId);
             DBG("Using DirectML execution provider, device: " << deviceId);
         }
-        else if (provider == GPUProvider::CUDA)
-        {
-            OrtCUDAProviderOptions cudaOptions;
-            cudaOptions.device_id = deviceId;
-            sessionOptions.AppendExecutionProvider_CUDA(cudaOptions);
-            DBG("Using CUDA execution provider, device: " << deviceId);
-        }
-#else
+        else
+#endif
+#ifdef USE_CUDA
         if (provider == GPUProvider::CUDA)
         {
             OrtCUDAProviderOptions cudaOptions;
@@ -172,6 +167,13 @@ bool FCPEPitchDetector::loadModel(const juce::File& modelPath,
             DBG("Using CUDA execution provider, device: " << deviceId);
         }
 #endif
+        {
+            // CPU fallback - do nothing, CPU is default
+            if (provider != GPUProvider::CPU)
+            {
+                DBG("Requested GPU provider not available, falling back to CPU");
+            }
+        }
 
 #ifdef _WIN32
         std::wstring modelPathW = modelPath.getFullPathName().toWideCharPointer();

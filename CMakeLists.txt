@@ -5,6 +5,8 @@ include(FetchContent)
 
 # ONNX Runtime configuration
 option(USE_GPU "Enable GPU acceleration for ONNX Runtime (not supported on macOS)" OFF)
+option(USE_CUDA "Enable CUDA execution provider" OFF)
+option(USE_DIRECTML "Enable DirectML execution provider (Windows only)" OFF)
 set(ONNXRUNTIME_VERSION "1.17.1" CACHE STRING "ONNX Runtime version")
 
 # Detect platform and set download URL
@@ -210,6 +212,20 @@ if(ONNXRUNTIME_FOUND)
     if(USE_GPU AND NOT APPLE)
         target_compile_definitions(PitchEditor PRIVATE ONNXRUNTIME_USE_GPU=1)
         target_compile_definitions(PitchEditorPlugin PRIVATE ONNXRUNTIME_USE_GPU=1)
+    endif()
+
+    # Enable CUDA if requested
+    if(USE_CUDA)
+        target_compile_definitions(PitchEditor PRIVATE USE_CUDA=1)
+        target_compile_definitions(PitchEditorPlugin PRIVATE USE_CUDA=1)
+        message(STATUS "CUDA execution provider: ENABLED")
+    endif()
+
+    # Enable DirectML if requested (Windows only)
+    if(USE_DIRECTML AND WIN32)
+        target_compile_definitions(PitchEditor PRIVATE USE_DIRECTML=1)
+        target_compile_definitions(PitchEditorPlugin PRIVATE USE_DIRECTML=1)
+        message(STATUS "DirectML execution provider: ENABLED")
     endif()
 
     # Copy ONNX Runtime DLLs to output directory on Windows

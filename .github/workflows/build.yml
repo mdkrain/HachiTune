@@ -79,7 +79,7 @@ jobs:
           Copy-Item "directml-nuget/bin/x64-win/DirectML.dll" onnxruntime/lib/
 
       - name: Configure CMake
-        run: cmake -B build -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DONNXRUNTIME_ROOT="./onnxruntime"
+        run: cmake -B build -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DUSE_DIRECTML=ON -DONNXRUNTIME_ROOT="./onnxruntime"
 
       - name: Build
         run: cmake --build build --config ${{ env.BUILD_TYPE }}
@@ -118,7 +118,7 @@ jobs:
           Rename-Item "onnxruntime-win-x64-gpu-${{ env.ONNX_VERSION }}" "onnxruntime"
 
       - name: Configure CMake
-        run: cmake -B build -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DUSE_GPU=ON -DONNXRUNTIME_ROOT="./onnxruntime"
+        run: cmake -B build -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DUSE_CUDA=ON -DONNXRUNTIME_ROOT="./onnxruntime"
 
       - name: Build
         run: cmake --build build --config ${{ env.BUILD_TYPE }}

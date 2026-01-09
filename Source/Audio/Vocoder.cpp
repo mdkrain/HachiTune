@@ -483,8 +483,9 @@ Ort::SessionOptions Vocoder::createSessionOptions()
 
     log("Creating session with device: " + executionDevice.toStdString() +
         ", threads: " + (inferenceThreads > 0 ? std::to_string(inferenceThreads) : "auto"));
-    
+
     // Add execution provider based on device selection
+#ifdef USE_CUDA
     if (executionDevice == "CUDA")
     {
         try {
@@ -497,7 +498,10 @@ Ort::SessionOptions Vocoder::createSessionOptions()
             log("Falling back to CPU");
         }
     }
-    else if (executionDevice == "DirectML")
+    else
+#endif
+#ifdef USE_DIRECTML
+    if (executionDevice == "DirectML")
     {
         try {
             sessionOptions.AppendExecutionProvider("DML");
@@ -507,7 +511,9 @@ Ort::SessionOptions Vocoder::createSessionOptions()
             log("Falling back to CPU");
         }
     }
-    else if (executionDevice == "CoreML")
+    else
+#endif
+    if (executionDevice == "CoreML")
     {
         try {
             sessionOptions.AppendExecutionProvider("CoreML");
@@ -517,6 +523,7 @@ Ort::SessionOptions Vocoder::createSessionOptions()
             log("Falling back to CPU");
         }
     }
+#ifdef USE_TENSORRT
     else if (executionDevice == "TensorRT")
     {
         try {
@@ -528,6 +535,7 @@ Ort::SessionOptions Vocoder::createSessionOptions()
             log("Falling back to CPU");
         }
     }
+#endif
     // CPU is the default fallback
     
     return sessionOptions;
