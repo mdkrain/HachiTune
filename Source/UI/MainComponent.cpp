@@ -4,15 +4,15 @@
 #include "../Utils/F0Smoother.h"
 #include "../Utils/PlatformPaths.h"
 #include "../Utils/Localization.h"
+#include <iostream>
+#include <atomic>
 
 MainComponent::MainComponent(bool enableAudioDevice)
     : enableAudioDeviceFlag(enableAudioDevice)
 {
-    DBG("MainComponent: Starting initialization...");
     setSize(1400, 900);
     setOpaque(true);  // Required for native title bar
-    
-    DBG("MainComponent: Creating project and engines...");
+
     // Initialize components
     project = std::make_unique<Project>();
     if (enableAudioDeviceFlag)
@@ -21,8 +21,7 @@ MainComponent::MainComponent(bool enableAudioDevice)
     fcpePitchDetector = std::make_unique<FCPEPitchDetector>();
     vocoder = std::make_unique<Vocoder>();
     undoManager = std::make_unique<PitchUndoManager>(100);
-    
-    DBG("MainComponent: Looking for FCPE model...");
+
     // Try to load FCPE model
     auto modelsDir = PlatformPaths::getModelsDirectory();
 
@@ -55,16 +54,33 @@ MainComponent::MainComponent(bool enableAudioDevice)
         DBG("Using YIN pitch detector as fallback");
         useFCPE = false;
     }
-    
+
+    // Initialize legacy SOME detector
+    someDetector = std::make_unique<SOMEDetector>();
+    auto someModelPath = modelsDir.getChildFile("some.onnx");
+    if (someModelPath.existsAsFile())
+    {
+        if (someDetector->loadModel(someModelPath))
+        {
+            DBG("SOME detector loaded successfully");
+        }
+        else
+        {
+            DBG("Failed to load SOME model");
+        }
+    }
+    else
+    {
+        DBG("SOME model not found at: " + someModelPath.getFullPathName());
+    }
+
     // Load vocoder settings
     applySettings();
-    
-    DBG("MainComponent: Initializing audio...");
+
     // Initialize audio (standalone app only)
     if (audioEngine)
         audioEngine->initializeAudio();
-    
-    DBG("MainComponent: Adding child components...");
+
     // Add child components - menu bar for all platforms
     menuBar.setModel(this);
     menuBar.setLookAndFeel(&menuBarLookAndFeel);
@@ -76,11 +92,10 @@ MainComponent::MainComponent(bool enableAudioDevice)
     // Configure toolbar for plugin mode
     if (isPluginMode())
         toolbar.setPluginMode(true);
-    
+
     // Set undo manager for piano roll
     pianoRoll.setUndoManager(undoManager.get());
-    
-    DBG("MainComponent: Setting up callbacks...");
+
     // Setup toolbar callbacks
     toolbar.onPlay = [this]() { play(); };
     toolbar.onPause = [this]() { pause(); };
@@ -116,8 +131,7 @@ MainComponent::MainComponent(bool enableAudioDevice)
         pianoRoll.repaint();  // Update display
     };
     parameterPanel.setProject(project.get());
-    
-    DBG("MainComponent: Setting up audio engine callbacks...");
+
     // Setup audio engine callbacks
     if (audioEngine)
     {
@@ -140,22 +154,17 @@ MainComponent::MainComponent(bool enableAudioDevice)
     
     // Set initial project
     pianoRoll.setProject(project.get());
-    
-    DBG("MainComponent: Adding keyboard listener...");
+
     // Add keyboard listener
     addKeyListener(this);
     setWantsKeyboardFocus(true);
-    
-    DBG("MainComponent: Loading config...");
+
     // Load config
     if (enableAudioDeviceFlag)
         loadConfig();
-    
-    DBG("MainComponent: Starting timer...");
+
     // Start timer for UI updates
     startTimerHz(30);
-    
-    DBG("MainComponent: Initialization complete!");
 }
 
 MainComponent::~MainComponent()
@@ -619,7 +628,7 @@ void MainComponent::analyzeAudio(Project& targetProject, const std::function<voi
 {
     auto& audioData = targetProject.getAudioData();
     if (audioData.waveform.getNumSamples() == 0) return;
-    
+
     // Extract F0
     const float* samples = audioData.waveform.getReadPointer(0);
     int numSamples = audioData.waveform.getNumSamples();
@@ -628,20 +637,14 @@ void MainComponent::analyzeAudio(Project& targetProject, const std::function<voi
     // Compute mel spectrogram first (to know target frame count)
     MelSpectrogram melComputer(SAMPLE_RATE, N_FFT, HOP_SIZE, NUM_MELS, FMIN, FMAX);
     audioData.melSpectrogram = melComputer.compute(samples, numSamples);
-    
+
     int targetFrames = static_cast<int>(audioData.melSpectrogram.size());
-    
-    DBG("Computed mel spectrogram: " << audioData.melSpectrogram.size() << " frames x " 
-        << (audioData.melSpectrogram.empty() ? 0 : audioData.melSpectrogram[0].size()) << " mels");
-    
+
     onProgress(0.55, "Extracting pitch (F0)...");
     // Use FCPE if available, otherwise fall back to YIN
     if (useFCPE && fcpePitchDetector && fcpePitchDetector->isLoaded())
     {
-        DBG("Using FCPE for pitch detection");
         std::vector<float> fcpeF0 = fcpePitchDetector->extractF0(samples, numSamples, SAMPLE_RATE);
-        
-        DBG("FCPE raw frames: " << fcpeF0.size() << ", target frames: " << targetFrames);
         
         // Resample FCPE F0 (100 fps @ 16kHz) to vocoder frame rate (86.1 fps @ 44.1kHz)
         // FCPE: sr=16000, hop=160 -> 100 fps, frame time = hop/16000 = 0.01s
@@ -650,16 +653,16 @@ void MainComponent::analyzeAudio(Project& targetProject, const std::function<voi
         if (!fcpeF0.empty() && targetFrames > 0)
         {
             audioData.f0.resize(targetFrames);
-            
+
             // Time per frame for each system
             const double fcpeFrameTime = 160.0 / 16000.0;  // 0.01 seconds
             const double vocoderFrameTime = 512.0 / 44100.0;  // ~0.01161 seconds
-            
+
             for (int i = 0; i < targetFrames; ++i)
             {
                 // Calculate time position for vocoder frame
                 double vocoderTime = i * vocoderFrameTime;
-                
+
                 // Find corresponding FCPE frame indices
                 double fcpeFramePos = vocoderTime / fcpeFrameTime;
                 int srcIdx = static_cast<int>(fcpeFramePos);
@@ -725,23 +728,20 @@ void MainComponent::analyzeAudio(Project& targetProject, const std::function<voi
         // Apply F0 smoothing for better quality
         onProgress(0.65, "Smoothing pitch curve...");
         audioData.f0 = F0Smoother::smoothF0(audioData.f0, audioData.voicedMask);
-        
+
         // Initialize baseline F0 for further edits (immutable reference)
         audioData.baseF0 = audioData.f0;
-        
-        DBG("Resampled and smoothed F0 frames: " << audioData.f0.size());
     }
     else
     {
-        DBG("Using YIN for pitch detection (fallback)");
         auto [f0Values, voicedValues] = pitchDetector->extractF0(samples, numSamples);
         audioData.f0 = std::move(f0Values);
         audioData.voicedMask = std::move(voicedValues);
-        
+
         // Apply F0 smoothing for better quality
         onProgress(0.65, "Smoothing pitch curve...");
         audioData.f0 = F0Smoother::smoothF0(audioData.f0, audioData.voicedMask);
-        
+
         // Initialize baseline F0
         audioData.baseF0 = audioData.f0;
     }
@@ -766,10 +766,6 @@ void MainComponent::analyzeAudio(Project& targetProject, const std::function<voi
     onProgress(0.90, "Segmenting notes...");
     // Segment into notes
     segmentIntoNotes(targetProject);
-
-    DBG("Loaded audio: " << audioData.waveform.getNumSamples() << " samples");
-    DBG("Detected " << audioData.f0.size() << " F0 frames");
-    DBG("Segmented into " << targetProject.getNotes().size() << " notes");
 }
 
 void MainComponent::exportFile()
@@ -856,62 +852,40 @@ void MainComponent::seek(double time)
 
 void MainComponent::resynthesizeIncremental()
 {
-    DBG("resynthesizeIncremental called");
-
-    if (!project) {
-        DBG("No project");
+    if (!project)
         return;
-    }
 
     auto& audioData = project->getAudioData();
-    if (audioData.melSpectrogram.empty() || audioData.f0.empty()) {
-        DBG("No mel spectrogram or F0 data: mel=" << audioData.melSpectrogram.size() << " f0=" << audioData.f0.size());
+    if (audioData.melSpectrogram.empty() || audioData.f0.empty())
         return;
-    }
-    if (!vocoder->isLoaded()) {
-        DBG("Vocoder not loaded");
+    if (!vocoder->isLoaded())
         return;
-    }
 
     // Check if there are dirty notes or F0 edits
     if (!project->hasDirtyNotes() && !project->hasF0DirtyRange())
-    {
-        DBG("No dirty notes or F0 edits, skipping incremental synthesis");
         return;
-    }
-
-    DBG("Has dirty notes: " + juce::String(project->hasDirtyNotes() ? "true" : "false") +
-        " Has F0 dirty: " + juce::String(project->hasF0DirtyRange() ? "true" : "false"));
 
     auto [dirtyStart, dirtyEnd] = project->getDirtyFrameRange();
     if (dirtyStart < 0 || dirtyEnd < 0)
-    {
-        DBG("Invalid dirty frame range");
         return;
-    }
     
     // Add padding frames for smooth transitions (vocoder needs context)
     // Increased padding for better quality and smoother transitions
     const int paddingFrames = 30;  // Increased from 10 to 30 for better context
     int startFrame = std::max(0, dirtyStart - paddingFrames);
-    int endFrame = std::min(static_cast<int>(audioData.melSpectrogram.size()), 
+    int endFrame = std::min(static_cast<int>(audioData.melSpectrogram.size()),
                            dirtyEnd + paddingFrames);
-    
-    DBG("Incremental synthesis: frames " << startFrame << " to " << endFrame);
-    
+
     // Extract mel spectrogram range
     std::vector<std::vector<float>> melRange(
         audioData.melSpectrogram.begin() + startFrame,
         audioData.melSpectrogram.begin() + endFrame);
-    
+
     // Get adjusted F0 for range
     std::vector<float> adjustedF0Range = project->getAdjustedF0ForRange(startFrame, endFrame);
-    
+
     if (melRange.empty() || adjustedF0Range.empty())
-    {
-        DBG("Empty mel or F0 range");
         return;
-    }
 
     // Show progress during synthesis
     toolbar.showProgress(TR("progress.synthesizing"));
@@ -947,28 +921,19 @@ void MainComponent::resynthesizeIncremental()
         {
             // Check if component still exists
             if (safeThis == nullptr)
-            {
-                DBG("MainComponent destroyed, skipping callback");
                 return;
-            }
 
             // If a newer job is in flight, drop this result
             if (jobId != safeThis->incrementalJobId.load())
-            {
-                DBG("Incremental synthesis result discarded (outdated job)");
                 return;
-            }
 
             safeThis->toolbar.setEnabled(true);
 
             if (synthesizedAudio.empty())
             {
-                DBG("Incremental synthesis failed: empty output");
                 safeThis->toolbar.hideProgress();
                 return;
             }
-
-            DBG("Incremental synthesis complete: " << synthesizedAudio.size() << " samples");
 
             auto& audioData = safeThis->project->getAudioData();
             float* dst = audioData.waveform.getWritePointer(0);
@@ -1012,7 +977,6 @@ void MainComponent::resynthesizeIncremental()
                 volumeScale = originalRms / synthRms;
                 // Limit scaling to reasonable range
                 volumeScale = std::clamp(volumeScale, 0.1f, 3.0f);
-                DBG("Volume scaling: " << volumeScale << " (original RMS: " << originalRms << ", synth RMS: " << synthRms << ")");
             }
 
             // Improved crossfade: find UV regions or silence for seamless splicing
@@ -1133,7 +1097,6 @@ void MainComponent::resynthesizeIncremental()
                                       std::max(0, synthSize - srcOffset));
             if (replaceSamples <= 0)
             {
-                DBG("Invalid replaceSamples after zero-cross alignment");
                 return;
             }
             
@@ -1189,7 +1152,7 @@ void MainComponent::resynthesizeIncremental()
                     }
                 }
             }
-            
+
             // Reload waveform in audio engine
             safeThis->audioEngine->loadWaveform(audioData.waveform, audioData.sampleRate);
 
@@ -1198,8 +1161,6 @@ void MainComponent::resynthesizeIncremental()
 
             // Hide progress bar
             safeThis->toolbar.hideProgress();
-
-            DBG("Incremental synthesis applied");
         });
 }
 
@@ -1281,7 +1242,67 @@ void MainComponent::segmentIntoNotes(Project& targetProject)
     auto& notes = targetProject.getNotes();
     notes.clear();
 
-    if (audioData.f0.empty()) return;
+    if (audioData.f0.empty())
+        return;
+
+    // Try to use SOME model for segmentation if available
+    if (someDetector && someDetector->isLoaded() && audioData.waveform.getNumSamples() > 0)
+    {
+
+        const float* samples = audioData.waveform.getReadPointer(0);
+        int numSamples = audioData.waveform.getNumSamples();
+
+        // audioData.f0 uses vocoder frame rate: 44100Hz / 512 hop = 86.13 fps
+        // SOME uses 44100Hz / 512 hop = 86.13 fps (same!)
+        // So SOME frames map directly to F0 frames
+        const int f0Size = static_cast<int>(audioData.f0.size());
+
+        // Use streaming detection to show notes as they're detected
+        someDetector->detectNotesStreaming(samples, numSamples, SOMEDetector::SAMPLE_RATE,
+            [&](const std::vector<SOMEDetector::NoteEvent>& chunkNotes) {
+                for (const auto& someNote : chunkNotes)
+                {
+                    if (someNote.isRest) continue;
+
+                    // SOME frames are already in the same frame rate as F0 (hop 512 at 44100Hz)
+                    int f0Start = someNote.startFrame;
+                    int f0End = someNote.endFrame;
+
+                    f0Start = std::max(0, std::min(f0Start, f0Size - 1));
+                    f0End = std::max(f0Start + 1, std::min(f0End, f0Size));
+
+                    if (f0End - f0Start < 3) continue;
+
+                    float midi = someNote.midiNote;
+                    Note note(f0Start, f0End, midi);
+                    std::vector<float> f0Values(audioData.f0.begin() + f0Start,
+                                                audioData.f0.begin() + f0End);
+                    note.setF0Values(std::move(f0Values));
+                    notes.push_back(note);
+                }
+
+                // Update UI on main thread
+                juce::MessageManager::callAsync([this]() {
+                    pianoRoll.repaint();
+                });
+            },
+            nullptr  // progress callback
+        );
+
+        // Wait a bit for streaming to complete (notes are added asynchronously)
+        juce::Thread::sleep(100);
+        
+        DBG("SOME segmented into " << notes.size() << " notes");
+        juce::Logger::writeToLog("SOME segmented into " + juce::String(notes.size()) + " notes");
+        
+        // Write to a debug file on desktop for visibility
+        auto logFile = juce::File::getSpecialLocation(juce::File::userDesktopDirectory).getChildFile("pitch_editor_some_debug.txt");
+        logFile.appendText("SOME segmented into " + juce::String(notes.size()) + " notes\n");
+        
+        return;
+    }
+
+    // Fallback: segment based on F0 pitch changes
 
     // Helper to finalize a note
     auto finalizeNote = [&](int start, int end) {
@@ -1427,8 +1448,6 @@ void MainComponent::applySettings()
             threads = xml->getIntAttribute("threads", 0);
         }
     }
-    
-    DBG("Applying settings: device=" + device + ", threads=" + juce::String(threads));
 
     // Apply to vocoder
     if (vocoder)
@@ -1437,10 +1456,7 @@ void MainComponent::applySettings()
 
         // Reload model if already loaded to apply new execution provider
         if (vocoder->isLoaded())
-        {
-            DBG("Reloading vocoder model with new settings...");
             vocoder->reloadModel();
-        }
     }
 }
 
@@ -1460,12 +1476,10 @@ void MainComponent::loadConfig()
             {
                 // Load last opened file path (for future use)
                 // juce::String lastFile = configObj->getProperty("lastFile").toString();
-                
+
                 // Load window size (for future use)
                 // int width = configObj->getProperty("windowWidth");
                 // int height = configObj->getProperty("windowHeight");
-                
-                DBG("Config loaded from: " + configFile.getFullPathName());
             }
         }
     }
@@ -1490,8 +1504,6 @@ void MainComponent::saveConfig()
     // Write to file
     juce::String jsonText = juce::JSON::toString(juce::var(config.get()));
     configFile.replaceWithText(jsonText);
-
-    DBG("Config saved to: " + configFile.getFullPathName());
 }
 
 // Menu IDs

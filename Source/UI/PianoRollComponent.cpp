@@ -425,20 +425,68 @@ void PianoRollComponent::drawPitchCurves(juce::Graphics &g) {
   int endFrame = std::min(static_cast<int>(audioData.f0.size()),
                           static_cast<int>(visibleEndTime * audioData.sampleRate / HOP_SIZE) + 1);
 
-  // Use current edited F0 slice (reflects actual edits baked into audioData.f0)
-  std::vector<float> adjustedF0;
-  adjustedF0.reserve(std::max(0, endFrame - startFrame));
+  // Build adjusted F0 curve from notes' actual pitch
+  std::vector<float> adjustedF0(audioData.f0.size(), 0.0f);
   float globalOffset = project->getGlobalPitchOffset();
   float globalRatio = std::pow(2.0f, globalOffset / 12.0f);
-  for (int i = startFrame; i < endFrame; ++i) {
-    if (i >= 0 && i < static_cast<int>(audioData.f0.size())) {
-      float v = audioData.f0[static_cast<size_t>(i)];
-      if (v > 0.0f && globalOffset != 0.0f)
-        v *= globalRatio;
-      adjustedF0.push_back(v);
+
+  const auto& notes = project->getNotes();
+
+  // For each note, get its F0 values
+  for (const auto& note : notes) {
+    if (note.isRest())
+      continue;
+
+    int noteStart = note.getStartFrame();
+    int noteEnd = note.getEndFrame();
+
+    // If note has deltaPitch (has been dragged), use computed F0
+    // Otherwise use original F0 from audioData
+    if (note.hasDeltaPitch()) {
+      // Get the note's adjusted F0 values (midiNote + pitchOffset + deltaPitch)
+      std::vector<float> noteF0 = note.computeF0FromDelta();
+
+      // Copy into the global F0 curve
+      for (int i = 0; i < static_cast<int>(noteF0.size()); ++i) {
+        int globalFrame = noteStart + i;
+        if (globalFrame >= 0 && globalFrame < static_cast<int>(adjustedF0.size())) {
+          float f0 = noteF0[i];
+          // Apply global offset
+          if (f0 > 0.0f && globalOffset != 0.0f)
+            f0 *= globalRatio;
+          adjustedF0[globalFrame] = f0;
+        }
+      }
     } else {
-      adjustedF0.push_back(0.0f);
+      // Use original F0 values with note's pitch offset
+      float noteOffset = note.getPitchOffset();
+      float noteRatio = (noteOffset != 0.0f) ? std::pow(2.0f, noteOffset / 12.0f) : 1.0f;
+
+      for (int i = noteStart; i < noteEnd; ++i) {
+        if (i >= 0 && i < static_cast<int>(audioData.f0.size())) {
+          float f0 = audioData.f0[i];
+          if (f0 > 0.0f) {
+            // Apply note offset
+            if (noteOffset != 0.0f)
+              f0 *= noteRatio;
+            // Apply global offset
+            if (globalOffset != 0.0f)
+              f0 *= globalRatio;
+          }
+          adjustedF0[i] = f0;
+        }
+      }
     }
+  }
+
+  // Extract visible portion
+  std::vector<float> visibleF0;
+  visibleF0.reserve(std::max(0, endFrame - startFrame));
+  for (int i = startFrame; i < endFrame; ++i) {
+    if (i >= 0 && i < static_cast<int>(adjustedF0.size()))
+      visibleF0.push_back(adjustedF0[i]);
+    else
+      visibleF0.push_back(0.0f);
   }
 
   // Draw a single continuous pitch curve (only visible portion, smoothed)
@@ -450,10 +498,10 @@ void PianoRollComponent::drawPitchCurves(juce::Graphics &g) {
 
   for (int i = startFrame; i < endFrame; ++i) {
     int localIdx = i - startFrame;
-    if (localIdx < 0 || localIdx >= static_cast<int>(adjustedF0.size()))
+    if (localIdx < 0 || localIdx >= static_cast<int>(visibleF0.size()))
       continue;
 
-    float f0 = adjustedF0[static_cast<size_t>(localIdx)];
+    float f0 = visibleF0[static_cast<size_t>(localIdx)];
 
     if (f0 > 0.0f && i < static_cast<int>(audioData.voicedMask.size()) &&
         audioData.voicedMask[i]) {
@@ -667,21 +715,39 @@ void PianoRollComponent::mouseDown(const juce::MouseEvent &e) {
         int numFrames = endFrame - startFrame;
 
         std::vector<float> delta(numFrames, 0.0f);
-        
-        // Use baseF0 (original detected pitch) to preserve curve shape
-        const auto& baseF0 = audioData.baseF0.empty() ? audioData.f0 : audioData.baseF0;
-        float fixedBaseMidi = note->getMidiNote();  // Use fixed note MIDI as reference
-        
+
+        // CRITICAL: If note already has deltaPitch (from previous drag), use adjusted F0
+        // Otherwise use original F0 from audioData
+        std::vector<float> currentF0Values;
+        if (note->hasDeltaPitch()) {
+            // Note was previously dragged, use its adjusted F0 values
+            currentF0Values = note->computeF0FromDelta();
+        } else {
+            // First time dragging, extract original F0 values for this note
+            currentF0Values.resize(numFrames, 0.0f);
+            int f0Size = static_cast<int>(audioData.f0.size());
+            for (int i = 0; i < numFrames; ++i) {
+                int globalFrame = startFrame + i;
+                if (globalFrame >= 0 && globalFrame < f0Size) {
+                    currentF0Values[i] = audioData.f0[globalFrame];
+                }
+            }
+        }
+
+        float fixedBaseMidi = note->getMidiNote();  // Use current note MIDI as reference
+
         for (int i = 0; i < numFrames; ++i)
         {
-            int globalFrame = startFrame + i;
-            if (globalFrame < static_cast<int>(baseF0.size()) && baseF0[globalFrame] > 0.0f)
+            if (currentF0Values[i] > 0.0f)
             {
-                float f0Midi = freqToMidi(baseF0[globalFrame]);
-                
+                float f0Midi = freqToMidi(currentF0Values[i]);
                 // Delta = actual F0 - fixed note MIDI value
-                // This ensures when note MIDI changes, we can directly apply: newF0 = newNoteMidi + delta
                 delta[i] = f0Midi - fixedBaseMidi;
+            }
+            else
+            {
+                // For unvoiced frames, set delta to 0 (will use note MIDI as base)
+                delta[i] = 0.0f;
             }
         }
         note->setDeltaPitch(std::move(delta));
@@ -820,9 +886,21 @@ void PianoRollComponent::mouseUp(const juce::MouseEvent &e) {
         // Apply base pitch + delta deviation
         // CRITICAL: Delta is relative to fixed note MIDI, so directly apply: newF0 = newNoteMidi + delta
         // This ensures F0 aligns perfectly with the note's MIDI value throughout the entire note range
+        // CRITICAL: Ensure frame indices are properly aligned between calculation and application
         for (int i = startFrame; i < endFrame && i < f0Size; ++i) {
+            // CRITICAL: Calculate local index to match delta array indexing
+            // delta[0] corresponds to startFrame, delta[1] to startFrame+1, etc.
             int localIdx = i - startFrame;
-          float d = (localIdx < static_cast<int>(delta.size())) ? delta[localIdx] : 0.0f;
+            
+            // CRITICAL: Verify localIdx is within delta array bounds
+            if (localIdx < 0 || localIdx >= static_cast<int>(delta.size()))
+            {
+                // Fallback: use note MIDI if delta index is out of bounds
+                audioData.f0[i] = midiToFreq(newBaseMidi);
+                continue;
+            }
+            
+          float d = delta[localIdx];
           
           // Directly apply: newF0 = newNoteMidi + delta
           // Delta was calculated relative to original note MIDI, so this preserves the shape
@@ -1213,6 +1291,9 @@ void PianoRollComponent::mouseUp(const juce::MouseEvent &e) {
         }
       }
     }
+
+    // Reset pitchOffset to 0 since we've already incorporated it into midiNote
+    draggedNote->setPitchOffset(0.0f);
 
     // Trigger UI update + incremental synthesis when pitch edit is finished
     if (onPitchEdited)
@@ -1701,6 +1782,15 @@ void PianoRollComponent::applyPitchDrawing(float x, float y) {
     if (it == drawingEditIndexByFrame.end()) {
       drawingEditIndexByFrame.emplace(idx, drawingEdits.size());
       drawingEdits.push_back(F0FrameEdit{idx, oldF0, newFreq, oldVoiced, true});
+
+      // Clear deltaPitch for any note containing this frame so changes are visible immediately
+      auto& notes = project->getNotes();
+      for (auto& note : notes) {
+        if (note.getStartFrame() <= idx && note.getEndFrame() > idx && note.hasDeltaPitch()) {
+          note.setDeltaPitch(std::vector<float>());
+          break;
+        }
+      }
     } else {
       auto &e = drawingEdits[it->second];
       e.newF0 = newFreq;
@@ -1751,6 +1841,20 @@ void PianoRollComponent::commitPitchDrawing() {
   for (const auto &e : drawingEdits) {
     minFrame = std::min(minFrame, e.idx);
     maxFrame = std::max(maxFrame, e.idx);
+  }
+
+  // Clear deltaPitch for notes in the edited range so they use the drawn F0 values
+  if (project && minFrame <= maxFrame) {
+    auto& notes = project->getNotes();
+    for (auto& note : notes) {
+      // Check if note overlaps with edited range
+      if (note.getEndFrame() > minFrame && note.getStartFrame() < maxFrame) {
+        // Clear deltaPitch so the note will use audioData.f0 instead of computed values
+        if (note.hasDeltaPitch()) {
+          note.setDeltaPitch(std::vector<float>());
+        }
+      }
+    }
   }
 
   // Set F0 dirty range in project for incremental synthesis

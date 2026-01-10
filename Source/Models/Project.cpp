@@ -45,6 +45,12 @@ std::unique_ptr<juce::XmlElement> Project::toXml() const
         n->setAttribute("vibratoRateHz", note.getVibratoRateHz());
         n->setAttribute("vibratoDepthSemitones", note.getVibratoDepthSemitones());
         n->setAttribute("vibratoPhaseRadians", note.getVibratoPhaseRadians());
+
+        // Lyric and phoneme
+        if (note.hasLyric())
+            n->setAttribute("lyric", note.getLyric());
+        if (note.hasPhoneme())
+            n->setAttribute("phoneme", note.getPhoneme());
     }
 
     // F0

@@ -2,6 +2,8 @@
 #include <cmath>
 #include <algorithm>
 #include <numeric>
+#include <iostream>
+#include <juce_core/juce_core.h>
 
 SOMEDetector::SOMEDetector() = default;
 SOMEDetector::~SOMEDetector() = default;
@@ -321,37 +323,91 @@ std::vector<SOMEDetector::NoteEvent> SOMEDetector::detectNotesWithProgress(
 
         if (noteMidi.empty())
             continue;
+        
+        // Debug: log SOME output for diagnosis
+        int restCount = static_cast<int>(std::count(noteRest.begin(), noteRest.end(), true));
+        DBG("SOME chunk: " << noteMidi.size() << " notes, rest count: " << restCount);
+        std::cout << "[SOME] Chunk: " << noteMidi.size() << " notes, " << restCount << " rest notes" << std::endl;
 
         // Calculate start frame for this chunk
-        // Use max of chunk start position and last note end position (like dataset-tools)
-        int chunkStartFrame = static_cast<int>(beginFrame / HOP_SIZE);
-        if (!allNotes.empty())
-            chunkStartFrame = std::max(chunkStartFrame, allNotes.back().endFrame);
+        // DIRECT COPY from ds-editor-lite: use max of chunk start position and last note end position
+        const auto start_frame = (std::max)(static_cast<int>(beginFrame / HOP_SIZE),
+                                             !allNotes.empty() ? allNotes.back().endFrame : 0);
+        int chunkStartFrame = start_frame;
 
         // Build notes from this chunk
-        // Duration is in seconds, convert to frames
-        int currentFrame = chunkStartFrame;
+        // DIRECT COPY from ds-editor-lite Some.cpp, adapted for frames instead of ticks
+        // Step 1: Calculate cumulative sum (exactly like cumulativeSum in ds-editor-lite)
+        std::vector<double> cumsum(noteDur.size());
+        if (!noteDur.empty())
+        {
+            cumsum[0] = static_cast<double>(noteDur[0]);
+            for (size_t i = 1; i < noteDur.size(); ++i)
+            {
+                cumsum[i] = noteDur[i] + cumsum[i - 1];
+            }
+        }
 
+        // Step 2: Convert cumulative durations to frames (like calculateNoteTicks in ds-editor-lite)
+        // noteDur is in seconds, convert to frames: seconds * SAMPLE_RATE / HOP_SIZE
+        std::vector<int> scaled_frames(cumsum.size());
+        for (size_t i = 0; i < cumsum.size(); ++i)
+        {
+            scaled_frames[i] = static_cast<int>(std::round(cumsum[i] * SAMPLE_RATE / HOP_SIZE));
+        }
+
+        // Step 3: Calculate each note's duration as difference (like note_ticks in ds-editor-lite)
+        std::vector<int> note_frames(scaled_frames.size());
+        if (!scaled_frames.empty())
+        {
+            note_frames[0] = scaled_frames[0];
+            for (size_t i = 1; i < scaled_frames.size(); ++i)
+            {
+                note_frames[i] = scaled_frames[i] - scaled_frames[i - 1];
+            }
+        }
+
+        // Step 4: Build notes (exactly like build_midi_note in ds-editor-lite)
+        int start_frame_temp = chunkStartFrame;
+        int notesCreated = 0;
+        int restSkipped = 0;
         for (size_t i = 0; i < noteMidi.size(); ++i)
         {
-            // Duration in seconds -> frames
-            int durationFrames = static_cast<int>(std::round(noteDur[i] * SAMPLE_RATE / HOP_SIZE));
-            if (durationFrames < 1) durationFrames = 1;
-
-            int endFrameNote = currentFrame + durationFrames;
-
-            if (!noteRest[i])
+            // CRITICAL: Check bounds for note_frames array
+            if (i >= note_frames.size())
             {
-                NoteEvent event;
-                event.startFrame = currentFrame;
-                event.endFrame = endFrameNote;
-                event.midiNote = noteMidi[i];
-                event.isRest = false;
-                allNotes.push_back(event);
+                DBG("SOME: note_frames index " << i << " out of bounds (size=" << note_frames.size() << ")");
+                std::cout << "[SOME] ERROR: note_frames index " << i << " out of bounds" << std::endl;
+                break;
             }
-
-            currentFrame = endFrameNote;
+            
+            int noteDurationFrames = note_frames[i];
+            if (noteDurationFrames < 1) noteDurationFrames = 1;
+            
+            if (noteRest[i])
+            {
+                // Rest note: skip but advance position (creates gap between notes)
+                restSkipped++;
+                start_frame_temp += noteDurationFrames;
+                continue;
+            }
+            
+            // Regular note: create event
+            NoteEvent event;
+            event.startFrame = start_frame_temp;
+            event.endFrame = start_frame_temp + noteDurationFrames;
+            event.midiNote = static_cast<float>(std::round(noteMidi[i]));
+            event.isRest = false;
+            allNotes.push_back(event);
+            notesCreated++;
+            
+            // Advance position for next note (or rest)
+            start_frame_temp += noteDurationFrames;
         }
+        
+        DBG("SOME chunk built: " << notesCreated << " notes created, " << restSkipped << " rest skipped");
+        std::cout << "[SOME] Chunk built: " << notesCreated << " notes, " << restSkipped << " rest, start=" 
+                  << chunkStartFrame << ", end=" << start_frame_temp << std::endl;
 
         processedFrames += (actualEnd - beginFrame);
         if (progressCallback)
@@ -374,9 +430,18 @@ void SOMEDetector::detectNotesStreaming(
     std::function<void(double)> progressCallback)
 {
 #ifdef HAVE_ONNXRUNTIME
+    DBG("=== detectNotesStreaming CALLED: " << numSamples << " samples ===");
+    juce::Logger::writeToLog("=== detectNotesStreaming CALLED: " + juce::String(numSamples) + " samples ===");
+    
+    // Write to desktop debug file
+    auto logFile = juce::File::getSpecialLocation(juce::File::userDesktopDirectory).getChildFile("pitch_editor_some_debug.txt");
+    logFile.appendText("=== detectNotesStreaming CALLED: " + juce::String(numSamples) + " samples ===\n");
+    
     if (!loaded || !onnxSession)
     {
         DBG("SOME model not loaded");
+        juce::Logger::writeToLog("SOME model not loaded");
+        logFile.appendText("SOME model not loaded\n");
         return;
     }
 
@@ -389,6 +454,7 @@ void SOMEDetector::detectNotesStreaming(
 
     MarkerList chunks = sliceAudio(waveform);
     DBG("SOME streaming: sliced into " << chunks.size() << " chunks");
+    juce::Logger::writeToLog("SOME streaming: sliced into " + juce::String(chunks.size()) + " chunks");
 
     if (chunks.empty())
         return;
@@ -415,39 +481,107 @@ void SOMEDetector::detectNotesStreaming(
         if (!inferChunk(chunkData, noteMidi, noteRest, noteDur))
         {
             DBG("SOME chunk inference failed");
+            std::cout << "[SOME] Chunk inference failed" << std::endl;
             continue;
         }
 
         if (noteMidi.empty())
             continue;
+        
+        // Debug: log SOME output for diagnosis
+        int restCount = static_cast<int>(std::count(noteRest.begin(), noteRest.end(), true));
+        DBG("SOME streaming chunk: " << noteMidi.size() << " notes, rest count: " << restCount);
+        juce::Logger::writeToLog("SOME streaming chunk: " + juce::String(noteMidi.size()) + " notes, " + juce::String(restCount) + " rest notes");
+        
+        // Write to desktop debug file
+        auto logFile = juce::File::getSpecialLocation(juce::File::userDesktopDirectory).getChildFile("pitch_editor_some_debug.txt");
+        logFile.appendText("SOME streaming chunk: " + juce::String(noteMidi.size()) + " notes, " + juce::String(restCount) + " rest notes\n");
 
         int chunkStartFrame = static_cast<int>(beginFrame / HOP_SIZE);
         chunkStartFrame = std::max(chunkStartFrame, lastEndFrame);
 
         std::vector<NoteEvent> chunkNotes;
-        int currentFrame = chunkStartFrame;
-
-        for (size_t i = 0; i < noteMidi.size(); ++i)
+        // DIRECT COPY from ds-editor-lite Some.cpp, adapted for frames instead of ticks
+        // Step 1: Calculate cumulative sum (exactly like cumulativeSum in ds-editor-lite)
+        std::vector<double> cumsum(noteDur.size());
+        if (!noteDur.empty())
         {
-            int durationFrames = static_cast<int>(std::round(noteDur[i] * SAMPLE_RATE / HOP_SIZE));
-            if (durationFrames < 1) durationFrames = 1;
-
-            int endFrameNote = currentFrame + durationFrames;
-
-            if (!noteRest[i])
+            cumsum[0] = static_cast<double>(noteDur[0]);
+            for (size_t i = 1; i < noteDur.size(); ++i)
             {
-                NoteEvent event;
-                event.startFrame = currentFrame;
-                event.endFrame = endFrameNote;
-                event.midiNote = noteMidi[i];
-                event.isRest = false;
-                chunkNotes.push_back(event);
+                cumsum[i] = noteDur[i] + cumsum[i - 1];
             }
-
-            currentFrame = endFrameNote;
         }
 
-        lastEndFrame = currentFrame;
+        // Step 2: Convert cumulative durations to frames (like calculateNoteTicks in ds-editor-lite)
+        // noteDur is in seconds, convert to frames: seconds * SAMPLE_RATE / HOP_SIZE
+        std::vector<int> scaled_frames(cumsum.size());
+        for (size_t i = 0; i < cumsum.size(); ++i)
+        {
+            scaled_frames[i] = static_cast<int>(std::round(cumsum[i] * SAMPLE_RATE / HOP_SIZE));
+        }
+
+        // Step 3: Calculate each note's duration as difference (like note_ticks in ds-editor-lite)
+        std::vector<int> note_frames(scaled_frames.size());
+        if (!scaled_frames.empty())
+        {
+            note_frames[0] = scaled_frames[0];
+            for (size_t i = 1; i < scaled_frames.size(); ++i)
+            {
+                note_frames[i] = scaled_frames[i] - scaled_frames[i - 1];
+            }
+        }
+
+        // Step 4: Build notes (exactly like build_midi_note in ds-editor-lite)
+        int start_frame_temp = chunkStartFrame;
+        int notesCreated = 0;
+        int restSkipped = 0;
+        for (size_t i = 0; i < noteMidi.size(); ++i)
+        {
+            // CRITICAL: Check bounds for note_frames array
+            if (i >= note_frames.size())
+            {
+                DBG("SOME streaming: note_frames index " << i << " out of bounds (size=" << note_frames.size() << ")");
+                std::cout << "[SOME] ERROR: note_frames index " << i << " out of bounds" << std::endl;
+                break;
+            }
+            
+            int noteDurationFrames = note_frames[i];
+            if (noteDurationFrames < 1) noteDurationFrames = 1;
+            
+            if (noteRest[i])
+            {
+                // Rest note: skip but advance position (creates gap between notes)
+                restSkipped++;
+                start_frame_temp += noteDurationFrames;
+                continue;
+            }
+            
+            // Regular note: create event
+            NoteEvent event;
+            event.startFrame = start_frame_temp;
+            event.endFrame = start_frame_temp + noteDurationFrames;
+            event.midiNote = static_cast<float>(std::round(noteMidi[i]));
+            event.isRest = false;
+            chunkNotes.push_back(event);
+            notesCreated++;
+            
+            // Advance position for next note (or rest)
+            start_frame_temp += noteDurationFrames;
+        }
+        
+        DBG("SOME streaming chunk built: " << notesCreated << " notes created, " << restSkipped << " rest skipped");
+        juce::Logger::writeToLog("SOME streaming chunk built: " + juce::String(notesCreated) + " notes, " 
+            + juce::String(restSkipped) + " rest, start=" + juce::String(chunkStartFrame) 
+            + ", end=" + juce::String(start_frame_temp));
+        
+        // Write to desktop debug file
+        auto logFile2 = juce::File::getSpecialLocation(juce::File::userDesktopDirectory).getChildFile("pitch_editor_some_debug.txt");
+        logFile2.appendText("SOME streaming chunk built: " + juce::String(notesCreated) + " notes, " 
+            + juce::String(restSkipped) + " rest, start=" + juce::String(chunkStartFrame) 
+            + ", end=" + juce::String(start_frame_temp) + "\n");
+
+        lastEndFrame = start_frame_temp;
 
         // Immediately callback with this chunk's notes
         if (noteCallback && !chunkNotes.empty())

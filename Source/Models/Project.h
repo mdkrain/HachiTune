@@ -57,7 +57,7 @@ public:
     const std::vector<Note>& getNotes() const { return notes; }
     void addNote(Note note) { notes.push_back(std::move(note)); }
     void clearNotes() { notes.clear(); }
-    
+
     Note* getNoteAtFrame(int frame);
     std::vector<Note*> getNotesInRange(int startFrame, int endFrame);
     std::vector<Note*> getSelectedNotes();

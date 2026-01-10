@@ -73,6 +73,16 @@ public:
     bool isRest() const { return rest; }
     void setRest(bool r) { rest = r; }
 
+    // Lyric (character/syllable for this note)
+    juce::String getLyric() const { return lyric; }
+    void setLyric(const juce::String& text) { lyric = text; }
+    bool hasLyric() const { return lyric.isNotEmpty(); }
+
+    // Phoneme (pronunciation for this note)
+    juce::String getPhoneme() const { return phoneme; }
+    void setPhoneme(const juce::String& ph) { phoneme = ph; }
+    bool hasPhoneme() const { return phoneme.isNotEmpty(); }
+
     // Check if frame is within note
     bool containsFrame(int frame) const;
 
@@ -93,4 +103,7 @@ private:
     bool selected = false;
     bool dirty = false;  // For incremental synthesis
     bool rest = false;   // Rest note (silence placeholder)
+
+    juce::String lyric;   // Lyric text (e.g., "a", "SP" for silence)
+    juce::String phoneme; // Phoneme (e.g., "a", "sp", for pronunciation)
 };
