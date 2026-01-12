@@ -1,5 +1,6 @@
 #include "Project.h"
 #include "../Utils/Constants.h"
+#include "../Utils/PitchCurveProcessor.h"
 #include <algorithm>
 #include <cmath>
 
@@ -61,6 +62,26 @@ std::unique_ptr<juce::XmlElement> Project::toXml() const
         for (float v : audioData.f0)
             parts.add(juce::String(v, 6));
         f0Elem->addTextElement(parts.joinIntoString(" "));
+    }
+
+    // BasePitch (MIDI)
+    auto* baseElem = root->createNewChildElement("BasePitch");
+    {
+        juce::StringArray parts;
+        parts.ensureStorageAllocated(static_cast<int>(audioData.basePitch.size()));
+        for (float v : audioData.basePitch)
+            parts.add(juce::String(v, 6));
+        baseElem->addTextElement(parts.joinIntoString(" "));
+    }
+
+    // DeltaPitch (MIDI)
+    auto* deltaElem = root->createNewChildElement("DeltaPitch");
+    {
+        juce::StringArray parts;
+        parts.ensureStorageAllocated(static_cast<int>(audioData.deltaPitch.size()));
+        for (float v : audioData.deltaPitch)
+            parts.add(juce::String(v, 6));
+        deltaElem->addTextElement(parts.joinIntoString(" "));
     }
 
     // VoicedMask
@@ -128,6 +149,36 @@ bool Project::fromXml(const juce::XmlElement& xml)
         audioData.baseF0 = audioData.f0;
     }
 
+    // BasePitch (MIDI)
+    audioData.basePitch.clear();
+    if (auto* baseElem = xml.getChildByName("BasePitch"))
+    {
+        juce::String baseText = baseElem->getAllSubText();
+        juce::StringArray parts;
+        parts.addTokens(baseText, " ", "");
+        audioData.basePitch.reserve(static_cast<size_t>(parts.size()));
+        for (const auto& p : parts)
+        {
+            if (p.isNotEmpty())
+                audioData.basePitch.push_back(p.getFloatValue());
+        }
+    }
+
+    // DeltaPitch (MIDI)
+    audioData.deltaPitch.clear();
+    if (auto* deltaElem = xml.getChildByName("DeltaPitch"))
+    {
+        juce::String deltaText = deltaElem->getAllSubText();
+        juce::StringArray parts;
+        parts.addTokens(deltaText, " ", "");
+        audioData.deltaPitch.reserve(static_cast<size_t>(parts.size()));
+        for (const auto& p : parts)
+        {
+            if (p.isNotEmpty())
+                audioData.deltaPitch.push_back(p.getFloatValue());
+        }
+    }
+
     // VoicedMask
     audioData.voicedMask.clear();
     if (auto* voicedElem = xml.getChildByName("VoicedMask"))
@@ -136,6 +187,24 @@ bool Project::fromXml(const juce::XmlElement& xml)
         audioData.voicedMask.reserve(static_cast<size_t>(mask.length()));
         for (int i = 0; i < mask.length(); ++i)
             audioData.voicedMask.push_back(mask[i] == '1');
+    }
+
+    // Build dense curves if missing or misaligned
+    const bool needsCurveRebuild = audioData.basePitch.empty() ||
+                                   audioData.deltaPitch.empty() ||
+                                   audioData.basePitch.size() != audioData.f0.size() ||
+                                   audioData.deltaPitch.size() != audioData.f0.size();
+
+    if (needsCurveRebuild && !audioData.f0.empty())
+    {
+        auto dense = PitchCurveProcessor::interpolateWithUvMask(audioData.f0, audioData.voicedMask);
+        audioData.f0 = dense;
+        PitchCurveProcessor::rebuildCurvesFromSource(*this, audioData.f0);
+    }
+    else if (!audioData.basePitch.empty() && !audioData.deltaPitch.empty() && audioData.f0.empty())
+    {
+        // Compose f0 if only curves were stored
+        PitchCurveProcessor::composeF0InPlace(*this, /*applyUvMask=*/false);
     }
 
     modified = false;
@@ -268,292 +337,92 @@ std::pair<int, int> Project::getDirtyFrameRange() const
 
 std::vector<float> Project::getAdjustedF0() const
 {
-    if (audioData.f0.empty())
-        return {};
-    
-    // Start with copy of original F0
-    std::vector<float> adjustedF0 = audioData.f0;
-    
-    // Apply global pitch offset
-    if (globalPitchOffset != 0.0f)
-    {
-        float globalRatio = std::pow(2.0f, globalPitchOffset / 12.0f);
-        for (auto& f : adjustedF0)
-        {
-            if (f > 0.0f)
-                f *= globalRatio;
-        }
-    }
-    
-    // Calculate per-frame ratios from notes
-    std::vector<float> frameRatios(adjustedF0.size(), 1.0f);
-    
-    for (const auto& note : notes)
-    {
-        const bool hasPitchOffset = std::abs(note.getPitchOffset()) > 0.0001f;
-        const bool hasVibrato = note.isVibratoEnabled() && note.getVibratoDepthSemitones() > 0.0001f && note.getVibratoRateHz() > 0.0001f;
-
-        if (hasPitchOffset || hasVibrato)
-        {
-            int start = note.getStartFrame();
-            int end = std::min(note.getEndFrame(), static_cast<int>(adjustedF0.size()));
-
-            for (int i = start; i < end; ++i)
-            {
-                float ratio = 1.0f;
-                if (hasPitchOffset)
-                    ratio *= std::pow(2.0f, note.getPitchOffset() / 12.0f);
-
-                if (hasVibrato)
-                {
-                    const float t = framesToSeconds(i - start);
-                    const float vib = note.getVibratoDepthSemitones() * std::sin(twoPi * note.getVibratoRateHz() * t + note.getVibratoPhaseRadians());
-                    ratio *= std::pow(2.0f, vib / 12.0f);
-                }
-
-                frameRatios[i] = ratio;
-            }
-        }
-    }
-    
-    // Apply smoothing at transitions, with UV region crossfading at note boundaries
-    const int smoothFrames = 20;  // Increased for better smoothing
-    const int maxUVSearchRange = 20;
-    
-    // Helper to find nearest UV region
-    auto findNearestUVRegion = [&](int centerFrame) -> int {
-        for (int offset = 0; offset <= maxUVSearchRange; ++offset) {
-            for (int dir = -1; dir <= 1; dir += 2) {
-                int frame = centerFrame + dir * offset;
-                if (frame >= 0 && frame < static_cast<int>(audioData.f0.size())) {
-                    bool isUnvoiced = (audioData.f0[frame] <= 0.0f);
-                    if (!isUnvoiced && frame < static_cast<int>(audioData.voicedMask.size())) {
-                        isUnvoiced = !audioData.voicedMask[frame];
-                    }
-                    if (isUnvoiced) {
-                        return frame;
-                    }
-                }
-            }
-        }
-        return -1;
-    };
-    
-    // First apply ratios to get initial adjusted F0
-    for (size_t i = 0; i < adjustedF0.size(); ++i)
-    {
-        if (i < audioData.voicedMask.size() && audioData.voicedMask[i])
-        {
-            adjustedF0[i] *= frameRatios[i];
-        }
-    }
-    
-    // Now smooth transitions, especially at note boundaries
-    for (size_t i = 1; i < frameRatios.size(); ++i)
-    {
-        if (std::abs(frameRatios[i] - frameRatios[i-1]) > 0.001f)
-        {
-            // Check if this is a note boundary
-            bool isNoteBoundary = false;
-            int globalFrame = static_cast<int>(i);
-            for (const auto& note : notes)
-            {
-                if (note.getStartFrame() == globalFrame || note.getEndFrame() == globalFrame)
-                {
-                    isNoteBoundary = true;
-                    break;
-                }
-            }
-            
-            if (isNoteBoundary)
-            {
-                // Try to find UV region for seamless splicing
-                int uvFrame = findNearestUVRegion(globalFrame);
-                
-                if (uvFrame >= 0 && uvFrame < static_cast<int>(adjustedF0.size()))
-                {
-                    // Found UV region: use crossfade around it
-                    int crossfadeFrames = 15;
-                    int crossfadeStart = std::max(0, std::min(static_cast<int>(i), uvFrame) - crossfadeFrames);
-                    int crossfadeEnd = std::min(static_cast<int>(adjustedF0.size()), 
-                                                std::max(static_cast<int>(i), uvFrame) + crossfadeFrames);
-                    
-                    // Apply crossfade
-                    for (int j = crossfadeStart; j < crossfadeEnd; ++j)
-                    {
-                        float t;
-                        if (j < uvFrame)
-                        {
-                            t = static_cast<float>(j - crossfadeStart) / (uvFrame - crossfadeStart);
-                        }
-                        else
-                        {
-                            t = 1.0f - static_cast<float>(j - uvFrame) / (crossfadeEnd - uvFrame);
-                        }
-                        t = std::clamp(t, 0.0f, 1.0f);
-                        t = t * t * (3.0f - 2.0f * t);  // Smooth curve
-                        
-                        float originalF0 = audioData.f0[j];
-                        float adjustedF0Val = adjustedF0[j];
-                        
-                        if (originalF0 > 0.0f && adjustedF0Val > 0.0f)
-                        {
-                            adjustedF0[j] = originalF0 * (1.0f - t) + adjustedF0Val * t;
-                        }
-                    }
-                    
-                    // Skip past crossfaded region
-                    i = static_cast<size_t>(crossfadeEnd - 1);
-                    continue;
-                }
-            }
-            
-            // Standard smoothing for non-boundary transitions
-            int startIdx = std::max(0, static_cast<int>(i) - smoothFrames / 2);
-            int endIdx = std::min(static_cast<int>(frameRatios.size()), 
-                                  static_cast<int>(i) + smoothFrames / 2 + 2);
-            
-            if (endIdx - startIdx > 1)
-            {
-                float valBefore = frameRatios[startIdx];
-                float valAfter = frameRatios[endIdx - 1];
-                
-                // Use cosine interpolation for smoother transitions
-                for (int j = startIdx; j < endIdx; ++j)
-                {
-                    float t = static_cast<float>(j - startIdx) / (endIdx - startIdx - 1);
-                    float smoothT = (1.0f - std::cos(t * 3.14159f)) * 0.5f;
-                    float newRatio = valBefore + smoothT * (valAfter - valBefore);
-                    
-                    // Re-apply ratio to F0
-                    if (j < static_cast<int>(audioData.voicedMask.size()) && audioData.voicedMask[j])
-                    {
-                        float originalF0 = audioData.f0[j];
-                        adjustedF0[j] = originalF0 * newRatio;
-                    }
-                }
-                
-                i = static_cast<size_t>(endIdx - 1);
-            }
-        }
-    }
-    
-    return adjustedF0;
-}
-
-std::vector<float> Project::getAdjustedF0ForRange(int startFrame, int endFrame) const
-{
-    if (audioData.f0.empty())
+    if (audioData.basePitch.empty() || audioData.deltaPitch.empty())
         return {};
 
-    // Clamp range
-    startFrame = std::max(0, startFrame);
-    endFrame = std::min(endFrame, static_cast<int>(audioData.f0.size()));
+    // Compose base + delta with UV applied and global offset
+    std::vector<float> adjustedF0 = PitchCurveProcessor::composeF0(*this,
+                                                                   /*applyUvMask=*/true,
+                                                                   globalPitchOffset);
 
-    if (startFrame >= endFrame)
-        return {};
-
-    int rangeSize = endFrame - startFrame;
-
-    // Get slice of F0 (already contains all pitch edits from dragging/drawing)
-    std::vector<float> adjustedF0(audioData.f0.begin() + startFrame,
-                                   audioData.f0.begin() + endFrame);
-
-    // Apply global pitch offset
-    if (globalPitchOffset != 0.0f)
-    {
-        float globalRatio = std::pow(2.0f, globalPitchOffset / 12.0f);
-        for (auto& f : adjustedF0)
-        {
-            if (f > 0.0f)
-                f *= globalRatio;
-        }
-    }
-
-    // Apply vibrato (note: pitchOffset is always 0 after drag, edits are baked into f0)
-    std::vector<float> frameRatios(rangeSize, 1.0f);
-
+    // Apply vibrato per note on top of composed curve
     for (const auto& note : notes)
     {
         const bool hasVibrato = note.isVibratoEnabled() &&
                                 note.getVibratoDepthSemitones() > 0.0001f &&
                                 note.getVibratoRateHz() > 0.0001f;
+        if (!hasVibrato)
+            continue;
 
-        if (hasVibrato)
+        const int start = std::max(0, note.getStartFrame());
+        const int end = std::min(note.getEndFrame(), static_cast<int>(adjustedF0.size()));
+
+        for (int i = start; i < end; ++i)
         {
-            int noteStart = note.getStartFrame();
-            int noteEnd = note.getEndFrame();
+            if (i < static_cast<int>(audioData.voicedMask.size()) && !audioData.voicedMask[i])
+                continue;
 
-            // Calculate overlap with our range
-            int overlapStart = std::max(noteStart, startFrame) - startFrame;
-            int overlapEnd = std::min(noteEnd, endFrame) - startFrame;
-
-            for (int i = overlapStart; i < overlapEnd; ++i)
-            {
-                if (i >= 0 && i < rangeSize)
-                {
-                    const int globalFrame = startFrame + i;
-                    const float t = framesToSeconds(globalFrame - noteStart);
-                    const float vib = note.getVibratoDepthSemitones() *
-                                     std::sin(twoPi * note.getVibratoRateHz() * t +
-                                             note.getVibratoPhaseRadians());
-                    frameRatios[i] = std::pow(2.0f, vib / 12.0f);
-                }
-            }
+            float vib = note.getVibratoDepthSemitones() *
+                        std::sin(twoPi * note.getVibratoRateHz() * framesToSeconds(i - start) +
+                                 note.getVibratoPhaseRadians());
+            adjustedF0[static_cast<size_t>(i)] *= std::pow(2.0f, vib / 12.0f);
         }
     }
 
-    // Apply vibrato ratios with smoothing at transitions
+    return adjustedF0;
+}
+
+std::vector<float> Project::getAdjustedF0ForRange(int startFrame, int endFrame) const
+{
+    if (audioData.basePitch.empty() || audioData.deltaPitch.empty())
+        return {};
+
+    // Clamp range
+    startFrame = std::max(0, startFrame);
+    endFrame = std::min(endFrame, static_cast<int>(audioData.basePitch.size()));
+
+    if (startFrame >= endFrame)
+        return {};
+
+    const int rangeSize = endFrame - startFrame;
+    std::vector<float> adjustedF0(static_cast<size_t>(rangeSize), 0.0f);
+
     for (int i = 0; i < rangeSize; ++i)
     {
-        size_t globalIdx = static_cast<size_t>(startFrame + i);
-        if (globalIdx < audioData.voicedMask.size() && audioData.voicedMask[globalIdx])
-        {
-            adjustedF0[i] *= frameRatios[i];
-        }
+        const int globalIdx = startFrame + i;
+        const float base = audioData.basePitch[static_cast<size_t>(globalIdx)];
+        const float delta = (globalIdx < static_cast<int>(audioData.deltaPitch.size()))
+                                ? audioData.deltaPitch[static_cast<size_t>(globalIdx)]
+                                : 0.0f;
+        float midi = base + delta + globalPitchOffset;
+        float freq = midiToFreq(midi);
+        if (globalIdx < static_cast<int>(audioData.voicedMask.size()) && !audioData.voicedMask[globalIdx])
+            freq = 0.0f;
+        adjustedF0[static_cast<size_t>(i)] = freq;
     }
-    
-    // Apply additional smoothing for smoother pitch transitions
-    // This helps reduce artifacts when notes change or vibrato is applied
-    const int smoothWindow = 5;
-    if (rangeSize > smoothWindow * 2)
+
+    // Apply vibrato for overlapping notes
+    for (const auto& note : notes)
     {
-        std::vector<float> smoothedF0 = adjustedF0;
-        
-        for (int i = smoothWindow; i < rangeSize - smoothWindow; ++i)
+        const bool hasVibrato = note.isVibratoEnabled() &&
+                                note.getVibratoDepthSemitones() > 0.0001f &&
+                                note.getVibratoRateHz() > 0.0001f;
+        if (!hasVibrato)
+            continue;
+
+        const int overlapStart = std::max(note.getStartFrame(), startFrame);
+        const int overlapEnd = std::min(note.getEndFrame(), endFrame);
+        for (int frame = overlapStart; frame < overlapEnd; ++frame)
         {
-            size_t globalIdx = static_cast<size_t>(startFrame + i);
-            if (globalIdx < audioData.voicedMask.size() && audioData.voicedMask[globalIdx])
-            {
-                // Weighted average in log domain for musical accuracy
-                float logSum = 0.0f;
-                float weightSum = 0.0f;
-                
-                for (int j = -smoothWindow; j <= smoothWindow; ++j)
-                {
-                    int idx = i + j;
-                    size_t globalIdxJ = static_cast<size_t>(startFrame + idx);
-                    
-                    if (idx >= 0 && idx < rangeSize && 
-                        globalIdxJ < audioData.voicedMask.size() && 
-                        audioData.voicedMask[globalIdxJ] && 
-                        adjustedF0[idx] > 0.0f)
-                    {
-                        // Gaussian-like weight (closer frames have more weight)
-                        float weight = std::exp(-0.5f * (j * j) / (smoothWindow * smoothWindow / 2.0f));
-                        logSum += std::log(adjustedF0[idx]) * weight;
-                        weightSum += weight;
-                    }
-                }
-                
-                if (weightSum > 0.0f)
-                {
-                    smoothedF0[i] = std::exp(logSum / weightSum);
-                }
-            }
+            const int localIdx = frame - startFrame;
+            if (frame < static_cast<int>(audioData.voicedMask.size()) && !audioData.voicedMask[frame])
+                continue;
+
+            float vib = note.getVibratoDepthSemitones() *
+                        std::sin(twoPi * note.getVibratoRateHz() * framesToSeconds(frame - note.getStartFrame()) +
+                                 note.getVibratoPhaseRadians());
+            adjustedF0[static_cast<size_t>(localIdx)] *= std::pow(2.0f, vib / 12.0f);
         }
-        
-        adjustedF0 = smoothedF0;
     }
 
     return adjustedF0;

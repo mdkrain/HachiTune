@@ -15,9 +15,11 @@ struct AudioData
     
     // Extracted features
     std::vector<std::vector<float>> melSpectrogram;  // [T, NUM_MELS]
-    std::vector<float> f0;                            // [T] (current/edited)
-    std::vector<float> baseF0;                        // [T] (immutable baseline)
-    std::vector<bool> voicedMask;                     // [T]
+    std::vector<float> f0;                            // [T] (composed: base + delta, dense)
+    std::vector<float> baseF0;                        // [T] (cached base pitch in Hz)
+    std::vector<float> basePitch;                     // [T] base pitch in MIDI (dense)
+    std::vector<float> deltaPitch;                    // [T] delta pitch in MIDI (dense)
+    std::vector<bool> voicedMask;                     // [T] uv mask (true = voiced)
     
     float getDuration() const
     {

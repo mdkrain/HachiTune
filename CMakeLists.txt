@@ -219,6 +219,8 @@ set(PITCH_EDITOR_COMMON_SOURCES
     Source/Utils/BasePitchCurve.h
     Source/Utils/F0Smoother.cpp
     Source/Utils/F0Smoother.h
+    Source/Utils/PitchCurveProcessor.cpp
+    Source/Utils/PitchCurveProcessor.h
     Source/Utils/SinusoidalSmoothing.cpp
     Source/Utils/SinusoidalSmoothing.h)
 

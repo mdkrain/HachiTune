@@ -2,6 +2,7 @@
 #include "../Utils/Constants.h"
 #include "../Utils/MelSpectrogram.h"
 #include "../Utils/F0Smoother.h"
+#include "../Utils/PitchCurveProcessor.h"
 #include "../Utils/PlatformPaths.h"
 #include "../Utils/Localization.h"
 
@@ -825,9 +826,7 @@ void MainComponent::analyzeAudio(Project& targetProject, const std::function<voi
         // Apply F0 smoothing for better quality
         onProgress(0.65, "Smoothing pitch curve...");
         audioData.f0 = F0Smoother::smoothF0(audioData.f0, audioData.voicedMask);
-        
-        // Initialize baseline F0 for further edits (immutable reference)
-        audioData.baseF0 = audioData.f0;
+        audioData.f0 = PitchCurveProcessor::interpolateWithUvMask(audioData.f0, audioData.voicedMask);
         
         DBG("Resampled and smoothed F0 frames: " << audioData.f0.size());
     }
@@ -841,9 +840,7 @@ void MainComponent::analyzeAudio(Project& targetProject, const std::function<voi
         // Apply F0 smoothing for better quality
         onProgress(0.65, "Smoothing pitch curve...");
         audioData.f0 = F0Smoother::smoothF0(audioData.f0, audioData.voicedMask);
-        
-        // Initialize baseline F0
-        audioData.baseF0 = audioData.f0;
+        audioData.f0 = PitchCurveProcessor::interpolateWithUvMask(audioData.f0, audioData.voicedMask);
     }
     
     onProgress(0.75, "Loading vocoder...");
@@ -1348,6 +1345,8 @@ void MainComponent::segmentIntoNotes(Project& targetProject)
         );
 
         DBG("SOME segmented into " << notes.size() << " notes");
+        if (!audioData.f0.empty())
+            PitchCurveProcessor::rebuildCurvesFromSource(targetProject, audioData.f0);
         return;
     }
 
@@ -1406,6 +1405,9 @@ void MainComponent::segmentIntoNotes(Project& targetProject)
     {
         finalizeNote(noteStart, static_cast<int>(audioData.f0.size()));
     }
+
+    if (!audioData.f0.empty())
+        PitchCurveProcessor::rebuildCurvesFromSource(targetProject, audioData.f0);
 }
 
 void MainComponent::showSettings()

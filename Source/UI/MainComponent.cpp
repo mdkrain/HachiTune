@@ -2,6 +2,7 @@
 #include "../Utils/Constants.h"
 #include "../Utils/MelSpectrogram.h"
 #include "../Utils/F0Smoother.h"
+#include "../Utils/PitchCurveProcessor.h"
 #include "../Utils/PlatformPaths.h"
 #include "../Utils/Localization.h"
 #include <iostream>
@@ -730,9 +731,7 @@ void MainComponent::analyzeAudio(Project& targetProject, const std::function<voi
         // Apply F0 smoothing for better quality
         onProgress(0.65, "Smoothing pitch curve...");
         audioData.f0 = F0Smoother::smoothF0(audioData.f0, audioData.voicedMask);
-
-        // Initialize baseline F0 for further edits (immutable reference)
-        audioData.baseF0 = audioData.f0;
+        audioData.f0 = PitchCurveProcessor::interpolateWithUvMask(audioData.f0, audioData.voicedMask);
     }
     else
     {
@@ -743,9 +742,7 @@ void MainComponent::analyzeAudio(Project& targetProject, const std::function<voi
         // Apply F0 smoothing for better quality
         onProgress(0.65, "Smoothing pitch curve...");
         audioData.f0 = F0Smoother::smoothF0(audioData.f0, audioData.voicedMask);
-
-        // Initialize baseline F0
-        audioData.baseF0 = audioData.f0;
+        audioData.f0 = PitchCurveProcessor::interpolateWithUvMask(audioData.f0, audioData.voicedMask);
     }
     
     onProgress(0.75, "Loading vocoder...");
@@ -768,6 +765,9 @@ void MainComponent::analyzeAudio(Project& targetProject, const std::function<voi
     onProgress(0.90, "Segmenting notes...");
     // Segment into notes
     segmentIntoNotes(targetProject);
+
+    // Build dense base/delta curves from the detected pitch
+    PitchCurveProcessor::rebuildCurvesFromSource(targetProject, audioData.f0);
 }
 
 void MainComponent::exportFile()
@@ -1248,10 +1248,9 @@ void MainComponent::undo()
         
         if (project)
         {
-            // Mark all notes as dirty for resynthesis
-            for (auto& note : project->getNotes())
-                note.markDirty();
-            
+            // Don't mark all notes as dirty - let undo action callbacks handle
+            // the specific dirty range. This avoids synthesizing the entire project.
+            // The undo action's callback will set the correct F0 dirty range.
             resynthesizeIncremental();
         }
     }
@@ -1266,10 +1265,9 @@ void MainComponent::redo()
         
         if (project)
         {
-            // Mark all notes as dirty for resynthesis
-            for (auto& note : project->getNotes())
-                note.markDirty();
-            
+            // Don't mark all notes as dirty - let redo action callbacks handle
+            // the specific dirty range. This avoids synthesizing the entire project.
+            // The redo action's callback will set the correct F0 dirty range.
             resynthesizeIncremental();
         }
     }
@@ -1367,6 +1365,9 @@ void MainComponent::segmentIntoNotes(Project& targetProject)
         // Write to a debug file on desktop for visibility
         auto logFile = juce::File::getSpecialLocation(juce::File::userDesktopDirectory).getChildFile("pitch_editor_some_debug.txt");
         logFile.appendText("SOME segmented into " + juce::String(notes.size()) + " notes\n");
+
+        if (!audioData.f0.empty())
+            PitchCurveProcessor::rebuildCurvesFromSource(targetProject, audioData.f0);
         
         return;
     }
@@ -1476,6 +1477,10 @@ void MainComponent::segmentIntoNotes(Project& targetProject)
     {
         finalizeNote(noteStart, static_cast<int>(audioData.f0.size()));
     }
+
+    // Update dense pitch curves after segmentation
+    if (!audioData.f0.empty())
+        PitchCurveProcessor::rebuildCurvesFromSource(targetProject, audioData.f0);
 }
 
 void MainComponent::showSettings()

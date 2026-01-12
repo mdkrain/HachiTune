@@ -1,6 +1,7 @@
 #include "PianoRollComponent.h"
 #include "../Utils/BasePitchCurve.h"
 #include "../Utils/Constants.h"
+#include "../Utils/PitchCurveProcessor.h"
 #include <cmath>
 #include <limits>
 
@@ -417,7 +418,7 @@ void PianoRollComponent::drawPitchCurves(juce::Graphics &g) {
   if (audioData.f0.empty())
     return;
 
-  // Get global pitch offset
+  // Get global pitch offset (applied to display only)
   float globalOffset = project->getGlobalPitchOffset();
 
   // Draw pitch curves per note with their pitch offsets applied
@@ -437,14 +438,19 @@ void PianoRollComponent::drawPitchCurves(juce::Graphics &g) {
     int endFrame = std::min(note.getEndFrame(), static_cast<int>(audioData.f0.size()));
 
     for (int i = startFrame; i < endFrame; ++i) {
-      float f0 = audioData.f0[i];
+      float baseMidi = (i < static_cast<int>(audioData.basePitch.size()))
+                           ? audioData.basePitch[static_cast<size_t>(i)]
+                           : ((i < static_cast<int>(audioData.f0.size()) && audioData.f0[static_cast<size_t>(i)] > 0.0f)
+                                  ? freqToMidi(audioData.f0[static_cast<size_t>(i)])
+                                  : 0.0f);
+      float deltaMidi = (i < static_cast<int>(audioData.deltaPitch.size()))
+                            ? audioData.deltaPitch[static_cast<size_t>(i)]
+                            : 0.0f;
+      float finalMidi = baseMidi + deltaMidi + noteOffset;  // noteOffset already includes globalOffset
 
-      if (f0 > 0.0f && i < static_cast<int>(audioData.voicedMask.size()) && audioData.voicedMask[i]) {
-        // Apply pitch offset to the displayed F0
-        float adjustedF0 = f0 * std::pow(2.0f, noteOffset / 12.0f);
-        float midi = freqToMidi(adjustedF0);
+      if (finalMidi > 0.0f) {
         float x = framesToSeconds(i) * pixelsPerSecond;
-        float y = midiToY(midi) + pixelsPerSemitone * 0.5f;
+        float y = midiToY(finalMidi) + pixelsPerSemitone * 0.5f;
 
         if (!pathStarted) {
           path.startNewSubPath(x, y);
@@ -452,10 +458,6 @@ void PianoRollComponent::drawPitchCurves(juce::Graphics &g) {
         } else {
           path.lineTo(x, y);
         }
-      } else if (pathStarted) {
-        g.strokePath(path, juce::PathStrokeType(2.0f));
-        path.clear();
-        pathStarted = false;
       }
     }
 
@@ -644,9 +646,7 @@ void PianoRollComponent::mouseDown(const juce::MouseEvent &e) {
     if (onNoteSelected)
       onNoteSelected(note);
 
-    // Calculate delta pitch before starting drag
-    // CRITICAL: Delta should be relative to FIXED note MIDI value, not smoothed base pitch
-    // This ensures when we apply: newF0 = newNoteMidi + delta, it aligns perfectly
+    // Capture delta slice from global dense deltaPitch for this note
     if (project)
     {
         auto& audioData = project->getAudioData();
@@ -655,40 +655,11 @@ void PianoRollComponent::mouseDown(const juce::MouseEvent &e) {
         int numFrames = endFrame - startFrame;
 
         std::vector<float> delta(numFrames, 0.0f);
-
-        // CRITICAL: If note already has deltaPitch (from previous drag), use adjusted F0
-        // Otherwise use original F0 from audioData
-        std::vector<float> currentF0Values;
-        if (note->hasDeltaPitch()) {
-            // Note was previously dragged, use its adjusted F0 values
-            currentF0Values = note->computeF0FromDelta();
-        } else {
-            // First time dragging, extract original F0 values for this note
-            currentF0Values.resize(numFrames, 0.0f);
-            int f0Size = static_cast<int>(audioData.f0.size());
-            for (int i = 0; i < numFrames; ++i) {
-                int globalFrame = startFrame + i;
-                if (globalFrame >= 0 && globalFrame < f0Size) {
-                    currentF0Values[i] = audioData.f0[globalFrame];
-                }
-            }
-        }
-
-        float fixedBaseMidi = note->getMidiNote();  // Use current note MIDI as reference
-
         for (int i = 0; i < numFrames; ++i)
         {
-            if (currentF0Values[i] > 0.0f)
-            {
-                float f0Midi = freqToMidi(currentF0Values[i]);
-                // Delta = actual F0 - fixed note MIDI value
-                delta[i] = f0Midi - fixedBaseMidi;
-            }
-            else
-            {
-                // For unvoiced frames, set delta to 0 (will use note MIDI as base)
-                delta[i] = 0.0f;
-            }
+            int globalFrame = startFrame + i;
+            if (globalFrame >= 0 && globalFrame < static_cast<int>(audioData.deltaPitch.size()))
+                delta[i] = audioData.deltaPitch[static_cast<size_t>(globalFrame)];
         }
         note->setDeltaPitch(std::move(delta));
     }
@@ -696,7 +667,8 @@ void PianoRollComponent::mouseDown(const juce::MouseEvent &e) {
     // Start dragging
     isDragging = true;
     draggedNote = note;
-    dragStartY = static_cast<float>(e.y);
+    // Store adjusted Y coordinate (accounting for timeline and scroll)
+    dragStartY = adjustedY;
     originalPitchOffset = note->getPitchOffset();
     originalMidiNote = note->getMidiNote();
 
@@ -753,14 +725,21 @@ void PianoRollComponent::mouseDrag(const juce::MouseEvent &e) {
   }
 
   if (isDragging && draggedNote) {
-    // Calculate pitch change from drag
-    float deltaY = dragStartY - e.y;
+    // Calculate adjusted Y coordinate (accounting for timeline and scroll)
+    float adjustedY = e.y - timelineHeight + static_cast<float>(scrollY);
+    
+    // Calculate pitch change from drag (using adjusted coordinates)
+    float deltaY = dragStartY - adjustedY;
     float deltaSemitones = deltaY / pixelsPerSemitone;
 
-    // Update pitch offset (visual feedback during drag)
-    // The actual F0 values will be updated in mouseUp
+    // Update pitch offset for visual feedback only (lightweight)
+    // Don't rebuild curves during drag for performance - just update offset
     draggedNote->setPitchOffset(deltaSemitones);
     draggedNote->markDirty();
+
+    // Note: We don't rebuild base pitch or F0 during drag for performance.
+    // The display uses pitchOffset which is already updated above.
+    // Full rebuild happens in mouseUp when drag completes.
 
     if (onPitchEdited)
       onPitchEdited();
@@ -784,92 +763,31 @@ void PianoRollComponent::mouseUp(const juce::MouseEvent &e) {
 
   if (isDragging && draggedNote) {
     float newOffset = draggedNote->getPitchOffset();
-    int startFrame = draggedNote->getStartFrame();
-    int endFrame = draggedNote->getEndFrame();
-
-    // Update the note's midiNote and F0 values
-    if (project) {
+    
+    // Check if there was any meaningful change (threshold: 0.001 semitones)
+    constexpr float CHANGE_THRESHOLD = 0.001f;
+    bool hasChange = std::abs(newOffset) >= CHANGE_THRESHOLD;
+    
+    if (hasChange && project) {
+      int startFrame = draggedNote->getStartFrame();
+      int endFrame = draggedNote->getEndFrame();
       auto& audioData = project->getAudioData();
       int f0Size = static_cast<int>(audioData.f0.size());
 
-      // Apply visual offset even if tiny, so UI reflects final state consistently
-      draggedNote->setPitchOffset(newOffset);
-
-      // IMPORTANT: Update note's midiNote FIRST, then invalidate cache, then update F0
-      // This ensures the cache uses the new midiNote value
+      // Update note's midiNote with final offset (bake pitchOffset into midiNote)
       draggedNote->setMidiNote(originalMidiNote + newOffset);
-      invalidateBasePitchCache();  // Invalidate cache so it will be regenerated with new note pitch
+      draggedNote->setPitchOffset(0.0f);  // Reset offset since it's baked into midiNote
       
-      // Find adjacent notes for boundary smoothing (needed for both delta and fallback paths)
-      Note* prevNote = nullptr;
-      Note* nextNote = nullptr;
-      auto& notes = project->getNotes();  // Non-const reference to allow taking address
-      for (auto& note : notes) {
-        if (note.isRest()) continue;
-        if (note.getEndFrame() <= startFrame && (!prevNote || note.getEndFrame() > prevNote->getEndFrame())) {
-          prevNote = &note;
-        }
-        if (note.getStartFrame() >= endFrame && (!nextNote || note.getStartFrame() < nextNote->getStartFrame())) {
-          nextNote = &note;
-        }
-      }
-      
-      if (std::abs(newOffset) > 0.001f) {
-        // Update F0 values using delta pitch model with smoothed base pitch
-        if (draggedNote->hasDeltaPitch()) {
-        const auto& delta = draggedNote->getDeltaPitch();
-        float newBaseMidi = originalMidiNote + newOffset;
-        
-        // Update base pitch cache (will regenerate with new note pitch)
-        updateBasePitchCacheIfNeeded();
-        
-        // Apply base pitch + delta deviation
-        // CRITICAL: Delta is relative to fixed note MIDI, so directly apply: newF0 = newNoteMidi + delta
-        // This ensures F0 aligns perfectly with the note's MIDI value throughout the entire note range
-        // CRITICAL: Ensure frame indices are properly aligned between calculation and application
-        for (int i = startFrame; i < endFrame && i < f0Size; ++i) {
-            // CRITICAL: Calculate local index to match delta array indexing
-            // delta[0] corresponds to startFrame, delta[1] to startFrame+1, etc.
-            int localIdx = i - startFrame;
-            
-            // CRITICAL: Verify localIdx is within delta array bounds
-            if (localIdx < 0 || localIdx >= static_cast<int>(delta.size()))
-            {
-                // Fallback: use note MIDI if delta index is out of bounds
-                audioData.f0[i] = midiToFreq(newBaseMidi);
-                continue;
-            }
-            
-          float d = delta[localIdx];
-          
-          // Directly apply: newF0 = newNoteMidi + delta
-          // Delta was calculated relative to original note MIDI, so this preserves the shape
-          // while aligning to the new note MIDI value
-          float targetMidi = newBaseMidi + d;
-          audioData.f0[i] = midiToFreq(targetMidi);
-          }
+      // Rebuild base pitch curve and F0 with final note position
+      PitchCurveProcessor::rebuildBaseFromNotes(*project);
+      PitchCurveProcessor::composeF0InPlace(*project, /*applyUvMask=*/false);
 
-          // Set F0 dirty range for synthesis (extend to include smoothing region)
-          int smoothStart = std::max(0, startFrame - 60);  // ~0.7s before for smoothing
-          int smoothEnd = std::min(f0Size, endFrame + 60);  // ~0.7s after for smoothing
-          project->setF0DirtyRange(smoothStart, smoothEnd);
-        } else {
-          // Fallback: apply uniform shift when no delta map
-          float ratio = std::pow(2.0f, newOffset / 12.0f);
-          for (int i = startFrame; i < endFrame && i < f0Size; ++i) {
-          float baseVal = (i < static_cast<int>(audioData.baseF0.size()) && audioData.baseF0[i] > 0.0f)
-                              ? audioData.baseF0[i]
-                              : audioData.f0[i];
-          if (baseVal > 0.0f) {
-            audioData.f0[i] = baseVal * ratio;
-            audioData.voicedMask[i] = true;
-          }
-          }
-          project->setF0DirtyRange(startFrame, endFrame);
-        }
-      }
+      // Mark dirty range for synthesis
+      int smoothStart = std::max(0, startFrame - 60);
+      int smoothEnd = std::min(f0Size, endFrame + 60);
+      project->setF0DirtyRange(smoothStart, smoothEnd);
 
-      // Create undo action before updating note
+      // Create undo action
       if (undoManager) {
         std::vector<F0FrameEdit> f0Edits;
         for (int i = startFrame; i < endFrame && i < f0Size; ++i) {
@@ -877,356 +795,46 @@ void PianoRollComponent::mouseUp(const juce::MouseEvent &e) {
           F0FrameEdit edit;
           edit.idx = i;
           edit.oldF0 = (localIdx < static_cast<int>(originalF0Values.size())) ? originalF0Values[localIdx] : 0.0f;
-          edit.newF0 = audioData.f0[i];
+          edit.newF0 = audioData.f0[static_cast<size_t>(i)];
           f0Edits.push_back(edit);
         }
+        // Capture frame range for undo callback
+        int capturedStartFrame = startFrame;
+        int capturedEndFrame = endFrame;
+        int capturedF0Size = f0Size;
+        Note* capturedNote = draggedNote;  // Capture note pointer for callback
         auto action = std::make_unique<NotePitchDragAction>(
             draggedNote, &audioData.f0,
             originalMidiNote, originalMidiNote + newOffset,
             std::move(f0Edits),
-            [this](Note* n) { reapplyBasePitchForNote(n); });  // Callback to recalculate F0 after undo/redo
+            [this, capturedStartFrame, capturedEndFrame, capturedF0Size, capturedNote](Note* n) {
+              if (project) {
+                PitchCurveProcessor::rebuildBaseFromNotes(*project);
+                PitchCurveProcessor::composeF0InPlace(*project, /*applyUvMask=*/false);
+                // Set dirty range for synthesis (same as when editing)
+                int smoothStart = std::max(0, capturedStartFrame - 60);
+                int smoothEnd = std::min(capturedF0Size, capturedEndFrame + 60);
+                project->setF0DirtyRange(smoothStart, smoothEnd);
+                // Clear note's dirty flag since we're using F0 dirty range instead
+                // This prevents getDirtyFrameRange() from expanding the range unnecessarily
+                if (n) {
+                  n->clearDirty();
+                }
+              }
+            });
         undoManager->addAction(std::move(action));
       }
 
-      // Note: midiNote was already updated above before cache invalidation
-      // Reset offset since base note was updated
+      if (onPitchEdited)
+        onPitchEdited();
+      repaint();
+      if (onPitchEditFinished)
+        onPitchEditFinished();
+    } else {
+      // No meaningful change: just reset pitchOffset and repaint
       draggedNote->setPitchOffset(0.0f);
-
-      // Improved boundary smoothing: find UV regions or silence for seamless transitions
-      // This avoids phase discontinuities by splicing at unvoiced regions
-      auto findNearestUVRegion = [&](int centerFrame, int searchRange) -> int {
-        // Search for unvoiced (UV) region or silence near the boundary
-        for (int offset = 0; offset <= searchRange; ++offset) {
-          // Check both directions
-          for (int dir = -1; dir <= 1; dir += 2) {
-            int frame = centerFrame + dir * offset;
-            if (frame >= 0 && frame < f0Size) {
-              // Check if this is an unvoiced frame (F0 == 0 or voicedMask == false)
-              bool isUnvoiced = (audioData.f0[frame] <= 0.0f);
-              if (!isUnvoiced && frame < static_cast<int>(audioData.voicedMask.size())) {
-                isUnvoiced = !audioData.voicedMask[frame];
-              }
-              
-              // Also check for silence (very low amplitude)
-              if (isUnvoiced) {
-                return frame;
-              }
-            }
-          }
-        }
-        return -1;  // No UV region found
-      };
-
-      // Smooth boundary with crossfade, preferring UV regions or adjacent notes
-      // Capture prevNote and nextNote by reference (they're in the same scope)
-      auto smoothBoundaryAtUV = [&](int noteBoundary, bool isStart) {
-        const int maxSearchRange = 20;  // Search up to 20 frames for UV region
-        const int maxCrossfadeFrames = 20;  // Increased for smoother transitions
-        
-        // Find adjacent note for smooth transition
-        Note* adjacentNote = isStart ? prevNote : nextNote;
-        float adjacentNoteMidi = 0.0f;
-        int adjacentNoteStart = -1, adjacentNoteEnd = -1;
-        if (adjacentNote) {
-          adjacentNoteMidi = adjacentNote->getMidiNote();
-          adjacentNoteStart = adjacentNote->getStartFrame();
-          adjacentNoteEnd = adjacentNote->getEndFrame();
-        }
-        
-        // Find nearest UV region
-        int uvFrame = findNearestUVRegion(noteBoundary, maxSearchRange);
-        
-        // Determine target F0 for smooth transition
-        float targetF0 = 0.0f;
-        bool useAdjacentNote = false;
-        
-        if (adjacentNote && adjacentNoteStart >= 0 && adjacentNoteEnd > adjacentNoteStart) {
-          // Check if adjacent note has F0 values at boundary
-          int boundaryFrame = isStart ? (startFrame - 1) : endFrame;
-          if (boundaryFrame >= 0 && boundaryFrame < f0Size && audioData.f0[boundaryFrame] > 0.0f) {
-            targetF0 = audioData.f0[boundaryFrame];
-            useAdjacentNote = true;
-          } else {
-            // Use adjacent note's MIDI value
-            targetF0 = midiToFreq(adjacentNoteMidi);
-            useAdjacentNote = true;
-          }
-        }
-        
-        if (uvFrame >= 0) {
-          // Found UV region: use it as splice point with crossfade
-          int crossfadeStart, crossfadeEnd;
-          if (isStart) {
-            // At note start: crossfade from UV region or adjacent note into note
-            crossfadeStart = std::max(0, (uvFrame >= 0 ? uvFrame : noteBoundary) - maxCrossfadeFrames);
-            crossfadeEnd = std::min(f0Size, noteBoundary + maxCrossfadeFrames);
-          } else {
-            // At note end: crossfade from note into UV region or adjacent note
-            crossfadeStart = std::max(0, noteBoundary - maxCrossfadeFrames);
-            crossfadeEnd = std::min(f0Size, (uvFrame >= 0 ? uvFrame : noteBoundary) + maxCrossfadeFrames);
-          }
-          
-          // Limit crossfade to transition region only (not inside adjacent note)
-          if (adjacentNote && adjacentNoteStart >= 0 && adjacentNoteEnd > adjacentNoteStart) {
-            if (isStart) {
-              // At start: don't modify inside previous note
-              crossfadeStart = std::max(crossfadeStart, adjacentNoteEnd);
-            } else {
-              // At end: don't modify inside next note
-              crossfadeEnd = std::min(crossfadeEnd, adjacentNoteStart);
-            }
-          }
-          
-          // Apply crossfade: only smooth transition regions OUTSIDE the note
-          // Do NOT modify F0 values inside the note - they should remain as set by the pitch shift
-          for (int i = crossfadeStart; i < crossfadeEnd && i < f0Size; ++i) {
-            bool isInsideNote = (i >= startFrame && i < endFrame);
-
-            // Skip frames inside the note - don't modify them
-            if (isInsideNote) continue;
-
-            // Don't modify inside adjacent note
-            if (adjacentNote && adjacentNoteStart >= 0 && adjacentNoteEnd > adjacentNoteStart) {
-              if (i >= adjacentNoteStart && i < adjacentNoteEnd) continue;
-            }
-
-            // Calculate crossfade weight for transition region
-            float t;
-            if (isStart) {
-              t = static_cast<float>(i - crossfadeStart) / (crossfadeEnd - crossfadeStart);
-            } else {
-              t = static_cast<float>(crossfadeEnd - i) / (crossfadeEnd - crossfadeStart);
-            }
-            t = std::clamp(t, 0.0f, 1.0f);
-            t = t * t * (3.0f - 2.0f * t);  // Smooth curve
-
-            // Get target F0 (from adjacent note or current value)
-            float sourceF0 = (useAdjacentNote && targetF0 > 0.0f) ? targetF0 : audioData.f0[i];
-
-            // Get note boundary F0 for blending
-            float noteBoundaryF0 = 0.0f;
-            if (isStart && startFrame < f0Size) {
-              noteBoundaryF0 = audioData.f0[startFrame];
-            } else if (!isStart && endFrame > 0 && endFrame - 1 < f0Size) {
-              noteBoundaryF0 = audioData.f0[endFrame - 1];
-            }
-
-            // Blend from source to note boundary
-            if (sourceF0 > 0.0f && noteBoundaryF0 > 0.0f) {
-              audioData.f0[i] = sourceF0 * (1.0f - t) + noteBoundaryF0 * t;
-            }
-          }
-        } else if (useAdjacentNote && targetF0 > 0.0f) {
-          // No UV region but have adjacent note: smooth transition to adjacent note
-          // IMPORTANT: Only modify transition region, not inside adjacent note
-          int crossfadeFrames = maxCrossfadeFrames;
-          int crossfadeStart, crossfadeEnd;
-          if (isStart) {
-            crossfadeStart = std::max(0, noteBoundary - crossfadeFrames);
-            crossfadeEnd = std::min(f0Size, noteBoundary + crossfadeFrames);
-          } else {
-            crossfadeStart = std::max(0, noteBoundary - crossfadeFrames);
-            crossfadeEnd = std::min(f0Size, noteBoundary + crossfadeFrames);
-          }
-          
-          // Limit crossfade to transition region only (not inside adjacent note)
-          if (adjacentNote && adjacentNoteStart >= 0 && adjacentNoteEnd > adjacentNoteStart) {
-            if (isStart) {
-              // At start: don't modify inside previous note
-              crossfadeStart = std::max(crossfadeStart, adjacentNoteEnd);
-            } else {
-              // At end: don't modify inside next note
-              crossfadeEnd = std::min(crossfadeEnd, adjacentNoteStart);
-            }
-          }
-          
-          for (int i = crossfadeStart; i < crossfadeEnd && i < f0Size; ++i) {
-            bool isInsideNote = (i >= startFrame && i < endFrame);
-            if (isInsideNote) continue;  // Don't modify inside current note
-            
-            // Don't modify inside adjacent note either
-            if (adjacentNote && adjacentNoteStart >= 0 && adjacentNoteEnd > adjacentNoteStart) {
-              if (i >= adjacentNoteStart && i < adjacentNoteEnd) {
-                continue;  // Skip adjacent note's internal frames
-              }
-            }
-            
-            // Calculate blend weight
-            float t;
-            if (isStart) {
-              t = static_cast<float>(i - crossfadeStart) / (crossfadeEnd - crossfadeStart);
-            } else {
-              t = static_cast<float>(crossfadeEnd - i) / (crossfadeEnd - crossfadeStart);
-            }
-            t = std::clamp(t, 0.0f, 1.0f);
-            t = t * t * (3.0f - 2.0f * t);  // Smooth curve
-            
-            // Blend from adjacent note's F0 to current F0 (only in transition region)
-            float currentF0 = audioData.f0[i];
-            if (targetF0 > 0.0f && currentF0 > 0.0f) {
-              audioData.f0[i] = targetF0 * (1.0f - t) + currentF0 * t;
-            } else if (targetF0 > 0.0f) {
-              audioData.f0[i] = targetF0;
-            }
-          }
-        } else {
-          // No UV region found: use extended Gaussian smoothing as fallback
-          const int smoothRadius = 10;  // Larger smoothing window
-          if (noteBoundary < smoothRadius || noteBoundary >= f0Size - smoothRadius)
-            return;
-          
-          // Extended Gaussian smoothing
-          constexpr int kernelSize = 21;  // -10 to +10
-          constexpr float sigma = 3.0f;
-          float weights[kernelSize];
-          float weightSum = 0.0f;
-          
-          for (int i = 0; i < kernelSize; ++i) {
-            float x = static_cast<float>(i - kernelSize / 2);
-            weights[i] = std::exp(-0.5f * x * x / (sigma * sigma));
-            weightSum += weights[i];
-          }
-          
-          // Normalize weights
-          for (int i = 0; i < kernelSize; ++i) {
-            weights[i] /= weightSum;
-          }
-          
-          // Apply smoothing
-          std::vector<float> smoothed(kernelSize);
-          for (int i = 0; i < kernelSize; ++i) {
-            int idx = noteBoundary + i - kernelSize / 2;
-            smoothed[i] = (idx >= 0 && idx < f0Size) ? audioData.f0[idx] : 0.0f;
-          }
-          
-          for (int i = 0; i < kernelSize; ++i) {
-            int idx = noteBoundary + i - kernelSize / 2;
-            if (idx >= 0 && idx < f0Size) {
-              float sum = 0.0f;
-              for (int j = 0; j < kernelSize; ++j) {
-                if (smoothed[j] > 0.0f) {
-                  sum += smoothed[j] * weights[j];
-                }
-              }
-              if (sum > 0.0f) {
-                audioData.f0[idx] = sum;
-              }
-            }
-          }
-        }
-      };
-
-      // Apply improved boundary smoothing
-      smoothBoundaryAtUV(startFrame, true);   // Start boundary
-      smoothBoundaryAtUV(endFrame, false);    // End boundary
-      
-      // Smooth interpolation in gaps between notes to avoid sharp corners
-      // Check gap between current note and next note
-      if (nextNote && nextNote->getStartFrame() > endFrame) {
-        int gapStart = endFrame;
-        int gapEnd = nextNote->getStartFrame();
-        int gapSize = gapEnd - gapStart;
-        
-        if (gapSize > 0 && gapSize < 100) {  // Only smooth small gaps (up to 100 frames)
-          // Get F0 values at gap boundaries
-          float f0AtGapStart = 0.0f;
-          float f0AtGapEnd = 0.0f;
-          
-          if (gapStart > 0 && gapStart - 1 < f0Size && audioData.f0[gapStart - 1] > 0.0f) {
-            f0AtGapStart = audioData.f0[gapStart - 1];
-          } else if (gapStart < f0Size && audioData.f0[gapStart] > 0.0f) {
-            f0AtGapStart = audioData.f0[gapStart];
-          }
-          
-          if (gapEnd < f0Size && audioData.f0[gapEnd] > 0.0f) {
-            f0AtGapEnd = audioData.f0[gapEnd];
-          } else if (gapEnd > 0 && gapEnd - 1 < f0Size && audioData.f0[gapEnd - 1] > 0.0f) {
-            f0AtGapEnd = audioData.f0[gapEnd - 1];
-          }
-          
-          // If both boundaries have F0 values, interpolate smoothly
-          if (f0AtGapStart > 0.0f && f0AtGapEnd > 0.0f) {
-            for (int i = gapStart; i < gapEnd && i < f0Size; ++i) {
-              float t = static_cast<float>(i - gapStart) / gapSize;
-              t = std::clamp(t, 0.0f, 1.0f);
-              // Use smooth curve (ease-in-out) for natural interpolation
-              t = t * t * (3.0f - 2.0f * t);
-              
-              // Linear interpolation in frequency domain (more natural for pitch)
-              float interpolatedF0 = f0AtGapStart * (1.0f - t) + f0AtGapEnd * t;
-              
-              // Only set if current value is 0 or significantly different
-              if (audioData.f0[i] <= 0.0f || std::abs(audioData.f0[i] - interpolatedF0) > 1.0f) {
-                audioData.f0[i] = interpolatedF0;
-                if (i < static_cast<int>(audioData.voicedMask.size())) {
-                  audioData.voicedMask[i] = true;
-                }
-              }
-            }
-          }
-        }
-      }
-      
-      // Check gap between previous note and current note
-      if (prevNote && prevNote->getEndFrame() < startFrame) {
-        int gapStart = prevNote->getEndFrame();
-        int gapEnd = startFrame;
-        int gapSize = gapEnd - gapStart;
-        
-        if (gapSize > 0 && gapSize < 100) {  // Only smooth small gaps (up to 100 frames)
-          // Get F0 values at gap boundaries
-          float f0AtGapStart = 0.0f;
-          float f0AtGapEnd = 0.0f;
-          
-          if (gapStart < f0Size && audioData.f0[gapStart] > 0.0f) {
-            f0AtGapStart = audioData.f0[gapStart];
-          } else if (gapStart > 0 && gapStart - 1 < f0Size && audioData.f0[gapStart - 1] > 0.0f) {
-            f0AtGapStart = audioData.f0[gapStart - 1];
-          }
-          
-          if (gapEnd < f0Size && audioData.f0[gapEnd] > 0.0f) {
-            f0AtGapEnd = audioData.f0[gapEnd];
-          } else if (gapEnd > 0 && gapEnd - 1 < f0Size && audioData.f0[gapEnd - 1] > 0.0f) {
-            f0AtGapEnd = audioData.f0[gapEnd - 1];
-          }
-          
-          // If both boundaries have F0 values, interpolate smoothly
-          if (f0AtGapStart > 0.0f && f0AtGapEnd > 0.0f) {
-            for (int i = gapStart; i < gapEnd && i < f0Size; ++i) {
-              float t = static_cast<float>(i - gapStart) / gapSize;
-              t = std::clamp(t, 0.0f, 1.0f);
-              // Use smooth curve (ease-in-out) for natural interpolation
-              t = t * t * (3.0f - 2.0f * t);
-              
-              // Linear interpolation in frequency domain (more natural for pitch)
-              float interpolatedF0 = f0AtGapStart * (1.0f - t) + f0AtGapEnd * t;
-              
-              // Only set if current value is 0 or significantly different
-              if (audioData.f0[i] <= 0.0f || std::abs(audioData.f0[i] - interpolatedF0) > 1.0f) {
-                audioData.f0[i] = interpolatedF0;
-                if (i < static_cast<int>(audioData.voicedMask.size())) {
-                  audioData.voicedMask[i] = true;
-                }
-              }
-            }
-          }
-        }
-      }
+      repaint();
     }
-
-    // Reset pitchOffset to 0 since we've already incorporated it into midiNote
-    draggedNote->setPitchOffset(0.0f);
-
-    // Clear deltaPitch since F0 values have been baked into audioData.f0
-    // This ensures visual display and synthesis use the same data source
-    draggedNote->setDeltaPitch(std::vector<float>());
-
-    // Trigger UI update + incremental synthesis when pitch edit is finished
-    if (onPitchEdited)
-      onPitchEdited();   // immediate repaint/update of pitch curves
-    repaint();
-    if (onPitchEditFinished)
-      onPitchEditFinished();  // downstream synthesis
   }
 
   isDragging = false;
@@ -1666,26 +1274,15 @@ void PianoRollComponent::reapplyBasePitchForNote(Note* note) {
   int endFrame = note->getEndFrame();
   int f0Size = static_cast<int>(audioData.f0.size());
 
-  // Invalidate base pitch cache since note MIDI changed
-  invalidateBasePitchCache();
-  updateBasePitchCacheIfNeeded();
-
-  // Reapply base pitch + delta to F0
-  // CRITICAL: Delta is relative to fixed note MIDI, so directly apply: newF0 = noteMidi + delta
-  if (note->hasDeltaPitch()) {
-    const auto& delta = note->getDeltaPitch();
-    float noteMidi = note->getMidiNote();
-
-    for (int i = startFrame; i < endFrame && i < f0Size; ++i) {
-      int localIdx = i - startFrame;
-      float d = (localIdx < static_cast<int>(delta.size())) ? delta[localIdx] : 0.0f;
-
-      // Directly apply: newF0 = noteMidi + delta
-      // Delta was calculated relative to note MIDI, so this preserves the shape
-      // while aligning to the note MIDI value
-      float targetMidi = noteMidi + d;
-      audioData.f0[i] = midiToFreq(targetMidi);
-    }
+  // Reapply base + delta from dense curves
+  for (int i = startFrame; i < endFrame && i < f0Size; ++i) {
+    float base = (i < static_cast<int>(audioData.basePitch.size()))
+                     ? audioData.basePitch[static_cast<size_t>(i)]
+                     : 0.0f;
+    float delta = (i < static_cast<int>(audioData.deltaPitch.size()))
+                      ? audioData.deltaPitch[static_cast<size_t>(i)]
+                      : 0.0f;
+    audioData.f0[i] = midiToFreq(base + delta);
   }
 
   // Always set F0 dirty range for synthesis (needed for undo/redo to trigger resynthesis)
@@ -1782,6 +1379,10 @@ void PianoRollComponent::applyPitchPoint(int frameIndex, int midiCents) {
     return;
 
   const int f0Size = static_cast<int>(audioData.f0.size());
+  if (audioData.deltaPitch.size() < audioData.f0.size())
+    audioData.deltaPitch.resize(audioData.f0.size(), 0.0f);
+  if (audioData.basePitch.size() < audioData.f0.size())
+    audioData.basePitch.resize(audioData.f0.size(), 0.0f);
   if (frameIndex < 0 || frameIndex >= f0Size)
     return;
 
@@ -1814,6 +1415,12 @@ void PianoRollComponent::applyPitchPoint(int frameIndex, int midiCents) {
       }
 
       audioData.f0[idx] = newFreq;
+      if (idx < static_cast<int>(audioData.basePitch.size()) &&
+          idx < static_cast<int>(audioData.deltaPitch.size())) {
+        float baseMidi = audioData.basePitch[static_cast<size_t>(idx)];
+        float newMidi = static_cast<float>(cents) / 100.0f;
+        audioData.deltaPitch[static_cast<size_t>(idx)] = newMidi - baseMidi;
+      }
       if (idx < static_cast<int>(audioData.voicedMask.size()))
         audioData.voicedMask[idx] = true;
     };
@@ -1821,39 +1428,45 @@ void PianoRollComponent::applyPitchPoint(int frameIndex, int midiCents) {
     return;
   }
 
-  auto applyFrame = [&](int idx, int cents) {
-    if (idx < 0 || idx >= f0Size)
-      return;
+    auto applyFrame = [&](int idx, int cents) {
+      if (idx < 0 || idx >= f0Size)
+        return;
 
-    const float newFreq = midiToFreq(static_cast<float>(cents) / 100.0f);
-    const float oldF0 = audioData.f0[idx];
-    const bool oldVoiced = (idx < static_cast<int>(audioData.voicedMask.size()))
-                               ? audioData.voicedMask[idx]
-                               : false;
+      const float newFreq = midiToFreq(static_cast<float>(cents) / 100.0f);
+      const float oldF0 = audioData.f0[idx];
+      const bool oldVoiced = (idx < static_cast<int>(audioData.voicedMask.size()))
+                                 ? audioData.voicedMask[idx]
+                                 : false;
 
-    auto it = drawingEditIndexByFrame.find(idx);
-    if (it == drawingEditIndexByFrame.end()) {
-      drawingEditIndexByFrame.emplace(idx, drawingEdits.size());
-      drawingEdits.push_back(F0FrameEdit{idx, oldF0, newFreq, oldVoiced, true});
+      auto it = drawingEditIndexByFrame.find(idx);
+      if (it == drawingEditIndexByFrame.end()) {
+        drawingEditIndexByFrame.emplace(idx, drawingEdits.size());
+        drawingEdits.push_back(F0FrameEdit{idx, oldF0, newFreq, oldVoiced, true});
 
-      // Clear deltaPitch for any note containing this frame so changes are visible immediately
-      auto &notes = project->getNotes();
-      for (auto &note : notes) {
-        if (note.getStartFrame() <= idx && note.getEndFrame() > idx && note.hasDeltaPitch()) {
-          note.setDeltaPitch(std::vector<float>());
-          break;
+        // Clear deltaPitch for any note containing this frame so changes are visible immediately
+        auto &notes = project->getNotes();
+        for (auto &note : notes) {
+          if (note.getStartFrame() <= idx && note.getEndFrame() > idx && note.hasDeltaPitch()) {
+            note.setDeltaPitch(std::vector<float>());
+            break;
+          }
         }
+      } else {
+        auto &e = drawingEdits[it->second];
+        e.newF0 = newFreq;
+        e.newVoiced = true;
       }
-    } else {
-      auto &e = drawingEdits[it->second];
-      e.newF0 = newFreq;
-      e.newVoiced = true;
-    }
 
-    audioData.f0[idx] = newFreq;
-    if (idx < static_cast<int>(audioData.voicedMask.size()))
-      audioData.voicedMask[idx] = true;
-  };
+      audioData.f0[idx] = newFreq;
+      if (idx < static_cast<int>(audioData.basePitch.size()) &&
+          idx < static_cast<int>(audioData.deltaPitch.size())) {
+        float baseMidi = audioData.basePitch[static_cast<size_t>(idx)];
+        float newMidi = static_cast<float>(cents) / 100.0f;
+        audioData.deltaPitch[static_cast<size_t>(idx)] = newMidi - baseMidi;
+      }
+      if (idx < static_cast<int>(audioData.voicedMask.size()))
+        audioData.voicedMask[idx] = true;
+    };
 
   auto appendValue = [&](int idx, int cents) {
     if (!activeDrawCurve)
