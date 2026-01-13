@@ -1,5 +1,6 @@
 #include "AudioAnalyzer.h"
 #include "../../Utils/PlatformPaths.h"
+#include <climits>
 
 AudioAnalyzer::AudioAnalyzer() = default;
 

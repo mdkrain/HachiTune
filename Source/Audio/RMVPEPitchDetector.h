@@ -91,6 +91,9 @@ private:
     // Resample audio to 16kHz
     std::vector<float> resampleTo16k(const float* audio, int numSamples, int srcRate);
 
+    // Process a single chunk of 16kHz audio
+    std::vector<float> extractF0Chunk(const float* audio16k, int numSamples, float threshold);
+
     // Decode hidden states to F0 (matching Python decode function)
     std::vector<float> decodeF0(const float* hidden, int numFrames, float threshold);
 
