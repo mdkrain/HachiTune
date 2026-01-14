@@ -2,6 +2,7 @@
 
 #include "../JuceHeader.h"
 #include "../Models/Note.h"
+#include "../Models/Project.h"
 #include <vector>
 #include <memory>
 #include <functional>
@@ -46,6 +47,8 @@ struct F0FrameEdit
     int idx = -1;
     float oldF0 = 0.0f;
     float newF0 = 0.0f;
+    float oldDelta = 0.0f;
+    float newDelta = 0.0f;
     bool oldVoiced = false;
     bool newVoiced = false;
 };
@@ -54,10 +57,11 @@ class F0EditAction : public UndoableAction
 {
 public:
     F0EditAction(std::vector<float>* f0Array,
+                 std::vector<float>* deltaPitchArray,
                  std::vector<bool>* voicedMask,
                  std::vector<F0FrameEdit> edits,
                  std::function<void(int, int)> onF0Changed = nullptr)
-        : f0Array(f0Array), voicedMask(voicedMask), edits(std::move(edits)), onF0Changed(onF0Changed) {}
+        : f0Array(f0Array), deltaPitchArray(deltaPitchArray), voicedMask(voicedMask), edits(std::move(edits)), onF0Changed(onF0Changed) {}
 
     void undo() override
     {
@@ -71,6 +75,8 @@ public:
                 minIdx = std::min(minIdx, e.idx);
                 maxIdx = std::max(maxIdx, e.idx);
             }
+            if (deltaPitchArray && e.idx >= 0 && e.idx < static_cast<int>(deltaPitchArray->size()))
+                (*deltaPitchArray)[e.idx] = e.oldDelta;
             if (voicedMask && e.idx >= 0 && e.idx < static_cast<int>(voicedMask->size()))
                 (*voicedMask)[e.idx] = e.oldVoiced;
         }
@@ -90,6 +96,8 @@ public:
                 minIdx = std::min(minIdx, e.idx);
                 maxIdx = std::max(maxIdx, e.idx);
             }
+            if (deltaPitchArray && e.idx >= 0 && e.idx < static_cast<int>(deltaPitchArray->size()))
+                (*deltaPitchArray)[e.idx] = e.newDelta;
             if (voicedMask && e.idx >= 0 && e.idx < static_cast<int>(voicedMask->size()))
                 (*voicedMask)[e.idx] = e.newVoiced;
         }
@@ -101,6 +109,7 @@ public:
 
 private:
     std::vector<float>* f0Array;
+    std::vector<float>* deltaPitchArray;
     std::vector<bool>* voicedMask;
     std::vector<F0FrameEdit> edits;
     std::function<void(int, int)> onF0Changed;  // Callback with (minFrame, maxFrame) to trigger resynthesis
@@ -164,6 +173,116 @@ private:
     float newMidi;
     std::vector<F0FrameEdit> f0Edits;
     std::function<void(Note*)> onNoteChanged;  // Callback when note MIDI changes
+};
+
+/**
+ * Action for dragging multiple notes to change pitch.
+ */
+class MultiNotePitchDragAction : public UndoableAction
+{
+public:
+    MultiNotePitchDragAction(std::vector<Note*> notes, std::vector<float>* f0Array,
+                             std::vector<float> oldMidis, float pitchDelta,
+                             std::vector<F0FrameEdit> f0Edits,
+                             std::function<void(const std::vector<Note*>&)> onNotesChanged = nullptr)
+        : notes(std::move(notes)), f0Array(f0Array), oldMidis(std::move(oldMidis)),
+          pitchDelta(pitchDelta), f0Edits(std::move(f0Edits)), onNotesChanged(onNotesChanged) {}
+
+    void undo() override
+    {
+        for (size_t i = 0; i < notes.size() && i < oldMidis.size(); ++i) {
+            if (notes[i]) {
+                notes[i]->setMidiNote(oldMidis[i]);
+                notes[i]->markDirty();
+            }
+        }
+        if (f0Array) {
+            for (const auto& e : f0Edits) {
+                if (e.idx >= 0 && e.idx < static_cast<int>(f0Array->size()))
+                    (*f0Array)[e.idx] = e.oldF0;
+            }
+        }
+        if (onNotesChanged)
+            onNotesChanged(notes);
+    }
+
+    void redo() override
+    {
+        for (size_t i = 0; i < notes.size() && i < oldMidis.size(); ++i) {
+            if (notes[i]) {
+                notes[i]->setMidiNote(oldMidis[i] + pitchDelta);
+                notes[i]->markDirty();
+            }
+        }
+        if (f0Array) {
+            for (const auto& e : f0Edits) {
+                if (e.idx >= 0 && e.idx < static_cast<int>(f0Array->size()))
+                    (*f0Array)[e.idx] = e.newF0;
+            }
+        }
+        if (onNotesChanged)
+            onNotesChanged(notes);
+    }
+
+    juce::String getName() const override { return "Drag Multiple Notes"; }
+
+private:
+    std::vector<Note*> notes;
+    std::vector<float>* f0Array;
+    std::vector<float> oldMidis;
+    float pitchDelta;
+    std::vector<F0FrameEdit> f0Edits;
+    std::function<void(const std::vector<Note*>&)> onNotesChanged;
+};
+
+/**
+ * Action for splitting a note into two.
+ */
+class NoteSplitAction : public UndoableAction
+{
+public:
+    NoteSplitAction(Project* proj, const Note& original, const Note& firstPart, const Note& secondPart,
+                    std::function<void()> onChanged = nullptr)
+        : project(proj), originalNote(original), firstNote(firstPart), secondNote(secondPart),
+          onChanged(onChanged) {}
+
+    void undo() override
+    {
+        if (!project) return;
+        // Remove the second note and restore original
+        project->removeNoteByStartFrame(secondNote.getStartFrame());
+        // Find and restore the first note to original state
+        for (auto& note : project->getNotes()) {
+            if (note.getStartFrame() == firstNote.getStartFrame()) {
+                note = originalNote;
+                break;
+            }
+        }
+        if (onChanged) onChanged();
+    }
+
+    void redo() override
+    {
+        if (!project) return;
+        // Split again: modify first note and add second
+        for (auto& note : project->getNotes()) {
+            if (note.getStartFrame() == originalNote.getStartFrame()) {
+                note = firstNote;
+                break;
+            }
+        }
+        project->addNote(secondNote);
+        if (onChanged) onChanged();
+    }
+
+    juce::String getName() const override { return "Split Note"; }
+
+private:
+    Project* project;
+    Note originalNote;
+    Note firstNote;
+    Note secondNote;
+    std::function<void()> onChanged;
 };
 
 /**

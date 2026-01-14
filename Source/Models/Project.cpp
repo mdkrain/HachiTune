@@ -243,6 +243,19 @@ std::vector<Note*> Project::getSelectedNotes()
     return result;
 }
 
+bool Project::removeNoteByStartFrame(int startFrame)
+{
+    for (auto it = notes.begin(); it != notes.end(); ++it)
+    {
+        if (it->getStartFrame() == startFrame)
+        {
+            notes.erase(it);
+            return true;
+        }
+    }
+    return false;
+}
+
 void Project::deselectAllNotes()
 {
     for (auto& note : notes)

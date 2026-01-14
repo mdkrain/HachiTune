@@ -1358,7 +1358,7 @@ void MainComponent::resynthesizeIncremental() {
                          reinterpret_cast<uintptr_t>(audioEnginePtr)));
               try {
                 audioEnginePtr->loadWaveform(audioData.waveform,
-                                             audioData.sampleRate);
+                                             audioData.sampleRate, true);
               } catch (...) {
                 DBG("MainComponent::resynthesizeIncremental - EXCEPTION in "
                     "loadWaveform!");

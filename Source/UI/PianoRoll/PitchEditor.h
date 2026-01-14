@@ -31,6 +31,13 @@ public:
     bool isDraggingNote() const { return isDragging; }
     Note* getDraggedNote() const { return draggedNote; }
 
+    // Multi-note dragging
+    void startMultiNoteDrag(const std::vector<Note*>& notes, float y);
+    void updateMultiNoteDrag(float y);
+    void endMultiNoteDrag();
+    bool isDraggingMultiNotes() const { return isMultiDragging; }
+    const std::vector<Note*>& getDraggedNotes() const { return draggedNotes; }
+
     // Pitch drawing
     void startDrawing(float x, float y);
     void continueDrawing(float x, float y);
@@ -63,6 +70,12 @@ private:
     float boundaryF0Start = 0.0f;
     float boundaryF0End = 0.0f;
     std::vector<float> originalF0Values;
+
+    // Multi-note drag state
+    bool isMultiDragging = false;
+    std::vector<Note*> draggedNotes;
+    std::vector<float> originalMidiNotes;
+    std::vector<std::vector<float>> originalF0ValuesMulti;
 
     // Draw state
     bool isDrawing = false;

@@ -9,6 +9,8 @@
 #include "PianoRoll/PianoRollRenderer.h"
 #include "PianoRoll/ScrollZoomController.h"
 #include "PianoRoll/PitchEditor.h"
+#include "PianoRoll/BoxSelector.h"
+#include "PianoRoll/NoteSplitter.h"
 
 #include <deque>
 #include <memory>
@@ -22,7 +24,8 @@ class PitchUndoManager;
 enum class EditMode
 {
     Select,     // Normal selection and dragging
-    Draw        // Pitch drawing mode
+    Draw,       // Pitch drawing mode
+    Split       // Note splitting mode
 };
 
 /**
@@ -99,6 +102,7 @@ private:
     void drawCursor(juce::Graphics& g);
     void drawPianoKeys(juce::Graphics& g);
     void drawDrawingCursor(juce::Graphics& g);  // Draw mode indicator
+    void drawSelectionRect(juce::Graphics& g);  // Box selection rectangle
 
     float midiToY(float midiNote) const;
     float yToMidi(float y) const;
@@ -124,6 +128,8 @@ private:
     std::unique_ptr<PianoRollRenderer> renderer;
     std::unique_ptr<ScrollZoomController> scrollZoomController;
     std::unique_ptr<PitchEditor> pitchEditor;
+    std::unique_ptr<BoxSelector> boxSelector;
+    std::unique_ptr<NoteSplitter> noteSplitter;
 
     float pixelsPerSecond = DEFAULT_PIXELS_PER_SECOND;
     float pixelsPerSemitone = DEFAULT_PIXELS_PER_SEMITONE;
@@ -162,7 +168,11 @@ private:
     int lastDrawValueCents = 0;
     DrawCurve* activeDrawCurve = nullptr;
     std::deque<std::unique_ptr<DrawCurve>> drawCurves;
-    
+
+    // Split mode guide line
+    float splitGuideX = -1.0f;  // World X coordinate for split guide line (-1 = hidden)
+    Note* splitGuideNote = nullptr;  // Note being hovered for split
+
     // Scrollbars
     juce::ScrollBar horizontalScrollBar { false };
     juce::ScrollBar verticalScrollBar { true };

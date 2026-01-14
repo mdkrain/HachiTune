@@ -11,11 +11,14 @@ PianoRollComponent::PianoRollComponent() {
   renderer = std::make_unique<PianoRollRenderer>();
   scrollZoomController = std::make_unique<ScrollZoomController>();
   pitchEditor = std::make_unique<PitchEditor>();
+  boxSelector = std::make_unique<BoxSelector>();
+  noteSplitter = std::make_unique<NoteSplitter>();
 
   // Wire up components
   renderer->setCoordinateMapper(coordMapper.get());
   scrollZoomController->setCoordinateMapper(coordMapper.get());
   pitchEditor->setCoordinateMapper(coordMapper.get());
+  noteSplitter->setCoordinateMapper(coordMapper.get());
 
   // Setup scrollZoomController callbacks
   scrollZoomController->onRepaintNeeded = [this]() { repaint(); };
@@ -39,6 +42,12 @@ PianoRollComponent::PianoRollComponent() {
   };
   pitchEditor->onBasePitchCacheInvalidated = [this]() {
     invalidateBasePitchCache();
+  };
+
+  // Setup noteSplitter callbacks
+  noteSplitter->onNoteSplit = [this]() {
+    invalidateBasePitchCache();
+    repaint();
   };
 
   addAndMakeVisible(horizontalScrollBar);
@@ -104,6 +113,7 @@ void PianoRollComponent::paint(juce::Graphics &g) {
     drawGrid(g);
     drawNotes(g);
     drawPitchCurves(g);
+    drawSelectionRect(g);
   }
 
   // Draw timeline (above grid, scrolls horizontally)
@@ -584,6 +594,28 @@ void PianoRollComponent::drawNotes(juce::Graphics &g) {
       g.fillRoundedRectangle(x, y, std::max(w, 4.0f), h, 2.0f);
     }
   }
+
+  // Draw split guide line when in split mode and hovering over a note
+  if (editMode == EditMode::Split && splitGuideNote && splitGuideX >= 0) {
+    float noteStartTime = framesToSeconds(splitGuideNote->getStartFrame());
+    float noteEndTime = framesToSeconds(splitGuideNote->getEndFrame());
+    float noteStartX = static_cast<float>(noteStartTime * pixelsPerSecond);
+    float noteEndX = static_cast<float>(noteEndTime * pixelsPerSecond);
+
+    // Only draw if guide is within note bounds (with margin)
+    if (splitGuideX > noteStartX + 5 && splitGuideX < noteEndX - 5) {
+      float noteY = midiToY(splitGuideNote->getAdjustedMidiNote());
+      float noteH = pixelsPerSemitone;
+
+      // Draw dashed vertical line
+      g.setColour(juce::Colour(0xFFFF6B6B));  // Red-ish color for visibility
+      float dashLength = 4.0f;
+      for (float dy = 0; dy < noteH; dy += dashLength * 2) {
+        float segmentLength = std::min(dashLength, noteH - dy);
+        g.drawLine(splitGuideX, noteY + dy, splitGuideX, noteY + dy + segmentLength, 2.0f);
+      }
+    }
+  }
 }
 
 void PianoRollComponent::drawPitchCurves(juce::Graphics &g) {
@@ -823,19 +855,35 @@ void PianoRollComponent::mouseDown(const juce::MouseEvent &e) {
     return;
   }
 
+  if (editMode == EditMode::Split) {
+    // Split mode - find and split note at click position
+    Note *note = noteSplitter->findNoteAt(adjustedX, adjustedY);
+    if (note) {
+      noteSplitter->splitNoteAtX(note, adjustedX);
+    }
+    return;
+  }
+
   // Check if clicking on a note
   Note *note = findNoteAt(adjustedX, adjustedY);
 
   if (note) {
-    // Select note
-    project->deselectAllNotes();
-    note->setSelected(true);
+    // Check if clicking on an already selected note (for multi-note drag)
+    auto selectedNotes = project->getSelectedNotes();
+    bool clickedOnSelected = note->isSelected() && selectedNotes.size() > 1;
 
-    if (onNoteSelected)
-      onNoteSelected(note);
+    if (clickedOnSelected) {
+      // Start multi-note drag
+      pitchEditor->startMultiNoteDrag(selectedNotes, adjustedY);
+    } else {
+      // Single note selection and drag
+      project->deselectAllNotes();
+      note->setSelected(true);
 
-    // Capture delta slice from global dense deltaPitch for this note
-    if (project) {
+      if (onNoteSelected)
+        onNoteSelected(note);
+
+      // Capture delta slice from global dense deltaPitch for this note
       auto &audioData = project->getAudioData();
       int startFrame = note->getStartFrame();
       int endFrame = note->getEndFrame();
@@ -849,21 +897,15 @@ void PianoRollComponent::mouseDown(const juce::MouseEvent &e) {
           delta[i] = audioData.deltaPitch[static_cast<size_t>(globalFrame)];
       }
       note->setDeltaPitch(std::move(delta));
-    }
 
-    // Start dragging
-    isDragging = true;
-    draggedNote = note;
-    // Store adjusted Y coordinate (accounting for timeline and scroll)
-    dragStartY = adjustedY;
-    originalPitchOffset = note->getPitchOffset();
-    originalMidiNote = note->getMidiNote();
+      // Start single note dragging
+      isDragging = true;
+      draggedNote = note;
+      dragStartY = adjustedY;
+      originalPitchOffset = note->getPitchOffset();
+      originalMidiNote = note->getMidiNote();
 
-    // Save boundary F0 values and original F0 for undo
-    if (project) {
-      auto &audioData = project->getAudioData();
-      int startFrame = note->getStartFrame();
-      int endFrame = note->getEndFrame();
+      // Save boundary F0 values and original F0 for undo
       int f0Size = static_cast<int>(audioData.f0.size());
 
       boundaryF0Start = (startFrame > 0 && startFrame - 1 < f0Size)
@@ -879,14 +921,9 @@ void PianoRollComponent::mouseDown(const juce::MouseEvent &e) {
 
     repaint();
   } else {
-    // Seek to position
-    double time = xToTime(adjustedX);
-    cursorTime = std::max(0.0, time);
-
-    if (onSeek)
-      onSeek(cursorTime);
-
+    // Clicked on empty area - start box selection
     project->deselectAllNotes();
+    boxSelector->startSelection(adjustedX, adjustedY);
     repaint();
   }
 }
@@ -896,10 +933,10 @@ void PianoRollComponent::mouseDrag(const juce::MouseEvent &e) {
   juce::int64 now = juce::Time::getMillisecondCounter();
   bool shouldRepaint = (now - lastDragRepaintTime) >= minDragRepaintInterval;
 
-  if (editMode == EditMode::Draw && isDrawing) {
-    float adjustedX = e.x - pianoKeysWidth + static_cast<float>(scrollX);
-    float adjustedY = e.y - timelineHeight + static_cast<float>(scrollY);
+  float adjustedX = e.x - pianoKeysWidth + static_cast<float>(scrollX);
+  float adjustedY = e.y - timelineHeight + static_cast<float>(scrollY);
 
+  if (editMode == EditMode::Draw && isDrawing) {
     applyPitchDrawing(adjustedX, adjustedY);
 
     if (onPitchEdited)
@@ -912,19 +949,34 @@ void PianoRollComponent::mouseDrag(const juce::MouseEvent &e) {
     return;
   }
 
-  if (isDragging && draggedNote) {
-    // Calculate adjusted Y coordinate (accounting for timeline and scroll)
-    float adjustedY = e.y - timelineHeight + static_cast<float>(scrollY);
+  // Handle box selection
+  if (boxSelector->isSelecting()) {
+    boxSelector->updateSelection(adjustedX, adjustedY);
+    if (shouldRepaint) {
+      repaint();
+      lastDragRepaintTime = now;
+    }
+    return;
+  }
 
-    // Calculate pitch change from drag (using adjusted coordinates)
+  // Handle multi-note drag
+  if (pitchEditor->isDraggingMultiNotes()) {
+    pitchEditor->updateMultiNoteDrag(adjustedY);
+    if (shouldRepaint) {
+      repaint();
+      lastDragRepaintTime = now;
+    }
+    return;
+  }
+
+  // Handle single note drag
+  if (isDragging && draggedNote) {
     float deltaY = dragStartY - adjustedY;
     float deltaSemitones = deltaY / pixelsPerSemitone;
 
-    // Update pitch offset for visual feedback only (lightweight)
     draggedNote->setPitchOffset(deltaSemitones);
     draggedNote->markDirty();
 
-    // Always repaint during drag for real-time preview (throttled)
     if (shouldRepaint) {
       repaint();
       lastDragRepaintTime = now;
@@ -942,6 +994,25 @@ void PianoRollComponent::mouseUp(const juce::MouseEvent &e) {
     return;
   }
 
+  // Handle box selection end
+  if (boxSelector->isSelecting()) {
+    auto notesInRect = boxSelector->getNotesInRect(project, coordMapper.get());
+    for (auto* note : notesInRect) {
+      note->setSelected(true);
+    }
+    boxSelector->endSelection();
+    repaint();
+    return;
+  }
+
+  // Handle multi-note drag end
+  if (pitchEditor->isDraggingMultiNotes()) {
+    pitchEditor->endMultiNoteDrag();
+    repaint();
+    return;
+  }
+
+  // Handle single note drag end
   if (isDragging && draggedNote) {
     float newOffset = draggedNote->getPitchOffset();
 
@@ -1047,8 +1118,26 @@ void PianoRollComponent::mouseUp(const juce::MouseEvent &e) {
 }
 
 void PianoRollComponent::mouseMove(const juce::MouseEvent &e) {
-  juce::ignoreUnused(e);
-  // Could implement hover effects here
+  // Split mode guide line
+  if (editMode == EditMode::Split && project) {
+    float adjustedX = e.x - pianoKeysWidth + static_cast<float>(scrollX);
+    float adjustedY = e.y - timelineHeight + static_cast<float>(scrollY);
+
+    Note *note = noteSplitter->findNoteAt(adjustedX, adjustedY);
+    if (note) {
+      splitGuideX = adjustedX;
+      splitGuideNote = note;
+    } else {
+      splitGuideX = -1.0f;
+      splitGuideNote = nullptr;
+    }
+    repaint();
+  } else if (splitGuideX >= 0) {
+    // Clear guide when leaving split mode
+    splitGuideX = -1.0f;
+    splitGuideNote = nullptr;
+    repaint();
+  }
 }
 
 void PianoRollComponent::mouseDoubleClick(const juce::MouseEvent &e) {
@@ -1112,11 +1201,13 @@ void PianoRollComponent::mouseWheelMove(const juce::MouseEvent &e,
       newPps = juce::jlimit(MIN_PIXELS_PER_SEMITONE, MAX_PIXELS_PER_SEMITONE,
                             newPps);
       pixelsPerSemitone = newPps;
+      coordMapper->setPixelsPerSemitone(newPps);
 
       // Adjust scroll position to keep MIDI note at mouse position fixed
       double newScrollY = midiAtMouse * pixelsPerSemitone - mouseY;
       newScrollY = std::max(0.0, newScrollY);
       scrollY = newScrollY;
+      coordMapper->setScrollY(newScrollY);
 
       updateScrollBars();
       repaint();
@@ -1134,11 +1225,13 @@ void PianoRollComponent::mouseWheelMove(const juce::MouseEvent &e,
       newPps =
           juce::jlimit(MIN_PIXELS_PER_SECOND, MAX_PIXELS_PER_SECOND, newPps);
       pixelsPerSecond = newPps;
+      coordMapper->setPixelsPerSecond(newPps);
 
       // Adjust scroll position to keep time at mouse position fixed
       double newScrollX = timeAtMouse * pixelsPerSecond - mouseX;
       newScrollX = std::max(0.0, newScrollX);
       scrollX = newScrollX;
+      coordMapper->setScrollX(newScrollX);
 
       updateScrollBars();
       repaint();
@@ -1185,8 +1278,10 @@ void PianoRollComponent::mouseWheelMove(const juce::MouseEvent &e,
       // Adjust scroll to keep mouse position stable
       float newMouseY = midiToY(midiAtMouse);
       scrollY = std::max(0.0, static_cast<double>(newMouseY - mouseY));
+      coordMapper->setScrollY(scrollY);
 
       pixelsPerSemitone = newPps;
+      coordMapper->setPixelsPerSemitone(newPps);
       updateScrollBars();
       repaint();
     } else {
@@ -1201,8 +1296,10 @@ void PianoRollComponent::mouseWheelMove(const juce::MouseEvent &e,
       // Adjust scroll to keep mouse position stable
       float newMouseX = static_cast<float>(timeAtMouse * newPps);
       scrollX = std::max(0.0, static_cast<double>(newMouseX - mouseX));
+      coordMapper->setScrollX(scrollX);
 
       pixelsPerSecond = newPps;
+      coordMapper->setPixelsPerSecond(newPps);
       updateScrollBars();
       repaint();
 
@@ -1224,8 +1321,10 @@ void PianoRollComponent::mouseMagnify(const juce::MouseEvent &e,
   // Adjust scroll to keep mouse position stable
   float newMouseX = static_cast<float>(timeAtMouse * newPps);
   scrollX = std::max(0.0, static_cast<double>(newMouseX - mouseX));
+  coordMapper->setScrollX(scrollX);
 
   pixelsPerSecond = newPps;
+  coordMapper->setPixelsPerSecond(newPps);
   updateScrollBars();
   repaint();
 
@@ -1237,12 +1336,14 @@ void PianoRollComponent::scrollBarMoved(juce::ScrollBar *scrollBar,
                                         double newRangeStart) {
   if (scrollBar == &horizontalScrollBar) {
     scrollX = newRangeStart;
+    coordMapper->setScrollX(newRangeStart);
 
     // Notify scroll changed for synchronization
     if (onScrollChanged)
       onScrollChanged(scrollX);
   } else if (scrollBar == &verticalScrollBar) {
     scrollY = newRangeStart;
+    coordMapper->setScrollY(newRangeStart);
   }
   repaint();
 }
@@ -1254,6 +1355,7 @@ void PianoRollComponent::setProject(Project *proj) {
   renderer->setProject(proj);
   scrollZoomController->setProject(proj);
   pitchEditor->setProject(proj);
+  noteSplitter->setProject(proj);
 
   invalidateBasePitchCache(); // Clear cache when project changes
   updateScrollBars();
@@ -1263,6 +1365,7 @@ void PianoRollComponent::setProject(Project *proj) {
 void PianoRollComponent::setUndoManager(PitchUndoManager *manager) {
   undoManager = manager;
   pitchEditor->setUndoManager(manager);
+  noteSplitter->setUndoManager(manager);
 }
 
 void PianoRollComponent::setCursorTime(double time) {
@@ -1307,9 +1410,11 @@ void PianoRollComponent::setPixelsPerSecond(float pps, bool centerOnCursor) {
     float newCursorX = static_cast<float>(cursorTime * newPps);
     scrollX = static_cast<double>(newCursorX - cursorRelativeX);
     scrollX = std::max(0.0, scrollX);
+    coordMapper->setScrollX(scrollX);
   }
 
   pixelsPerSecond = newPps;
+  coordMapper->setPixelsPerSecond(newPps);
   updateScrollBars();
   repaint();
 
@@ -1320,6 +1425,7 @@ void PianoRollComponent::setPixelsPerSecond(float pps, bool centerOnCursor) {
 void PianoRollComponent::setPixelsPerSemitone(float pps) {
   pixelsPerSemitone =
       juce::jlimit(MIN_PIXELS_PER_SEMITONE, MAX_PIXELS_PER_SEMITONE, pps);
+  coordMapper->setPixelsPerSemitone(pixelsPerSemitone);
   updateScrollBars();
   repaint();
 }
@@ -1329,6 +1435,7 @@ void PianoRollComponent::setScrollX(double x) {
     return; // No significant change
 
   scrollX = x;
+  coordMapper->setScrollX(x);
   horizontalScrollBar.setCurrentRangeStart(x);
 
   // Don't call onScrollChanged here to avoid infinite recursion
@@ -1357,12 +1464,19 @@ void PianoRollComponent::centerOnPitchRange(float minMidi, float maxMidi) {
       juce::jlimit(0.0, std::max(0.0, totalHeight - visibleHeight), newScrollY);
 
   scrollY = newScrollY;
+  coordMapper->setScrollY(newScrollY);
   verticalScrollBar.setCurrentRangeStart(newScrollY);
   repaint();
 }
 
 void PianoRollComponent::setEditMode(EditMode mode) {
   editMode = mode;
+
+  // Clear split guide when leaving split mode
+  if (mode != EditMode::Split) {
+    splitGuideX = -1.0f;
+    splitGuideNote = nullptr;
+  }
 
   // Change cursor based on mode
   if (mode == EditMode::Draw) {
@@ -1572,7 +1686,7 @@ void PianoRollComponent::commitPitchDrawing() {
   if (undoManager && project) {
     auto &audioData = project->getAudioData();
     auto action = std::make_unique<F0EditAction>(
-        &audioData.f0, &audioData.voicedMask, drawingEdits,
+        &audioData.f0, &audioData.deltaPitch, &audioData.voicedMask, drawingEdits,
         [this](int minFrame, int maxFrame) {
           // Callback to trigger resynthesis after undo/redo
           if (project) {
@@ -1618,16 +1732,25 @@ void PianoRollComponent::applyPitchPoint(int frameIndex, int midiCents) {
     auto applyFrameFirst = [&](int idx, int cents) {
       const float newFreq = midiToFreq(static_cast<float>(cents) / 100.0f);
       const float oldF0 = audioData.f0[idx];
+      const float oldDelta = (idx < static_cast<int>(audioData.deltaPitch.size()))
+                                 ? audioData.deltaPitch[idx]
+                                 : 0.0f;
       const bool oldVoiced =
           (idx < static_cast<int>(audioData.voicedMask.size()))
               ? audioData.voicedMask[idx]
               : false;
 
+      float baseMidi = (idx < static_cast<int>(audioData.basePitch.size()))
+                           ? audioData.basePitch[static_cast<size_t>(idx)]
+                           : 0.0f;
+      float newMidi = static_cast<float>(cents) / 100.0f;
+      float newDelta = newMidi - baseMidi;
+
       auto it = drawingEditIndexByFrame.find(idx);
       if (it == drawingEditIndexByFrame.end()) {
         drawingEditIndexByFrame.emplace(idx, drawingEdits.size());
         drawingEdits.push_back(
-            F0FrameEdit{idx, oldF0, newFreq, oldVoiced, true});
+            F0FrameEdit{idx, oldF0, newFreq, oldDelta, newDelta, oldVoiced, true});
         // Clear deltaPitch for any note containing this frame so changes are
         // visible immediately
         auto &notes = project->getNotes();
@@ -1641,15 +1764,13 @@ void PianoRollComponent::applyPitchPoint(int frameIndex, int midiCents) {
       } else {
         auto &e = drawingEdits[it->second];
         e.newF0 = newFreq;
+        e.newDelta = newDelta;
         e.newVoiced = true;
       }
 
       audioData.f0[idx] = newFreq;
-      if (idx < static_cast<int>(audioData.basePitch.size()) &&
-          idx < static_cast<int>(audioData.deltaPitch.size())) {
-        float baseMidi = audioData.basePitch[static_cast<size_t>(idx)];
-        float newMidi = static_cast<float>(cents) / 100.0f;
-        audioData.deltaPitch[static_cast<size_t>(idx)] = newMidi - baseMidi;
+      if (idx < static_cast<int>(audioData.deltaPitch.size())) {
+        audioData.deltaPitch[static_cast<size_t>(idx)] = newDelta;
       }
       if (idx < static_cast<int>(audioData.voicedMask.size()))
         audioData.voicedMask[idx] = true;
@@ -1664,14 +1785,23 @@ void PianoRollComponent::applyPitchPoint(int frameIndex, int midiCents) {
 
     const float newFreq = midiToFreq(static_cast<float>(cents) / 100.0f);
     const float oldF0 = audioData.f0[idx];
+    const float oldDelta = (idx < static_cast<int>(audioData.deltaPitch.size()))
+                               ? audioData.deltaPitch[idx]
+                               : 0.0f;
     const bool oldVoiced = (idx < static_cast<int>(audioData.voicedMask.size()))
                                ? audioData.voicedMask[idx]
                                : false;
 
+    float baseMidi = (idx < static_cast<int>(audioData.basePitch.size()))
+                         ? audioData.basePitch[static_cast<size_t>(idx)]
+                         : 0.0f;
+    float newMidi = static_cast<float>(cents) / 100.0f;
+    float newDelta = newMidi - baseMidi;
+
     auto it = drawingEditIndexByFrame.find(idx);
     if (it == drawingEditIndexByFrame.end()) {
       drawingEditIndexByFrame.emplace(idx, drawingEdits.size());
-      drawingEdits.push_back(F0FrameEdit{idx, oldF0, newFreq, oldVoiced, true});
+      drawingEdits.push_back(F0FrameEdit{idx, oldF0, newFreq, oldDelta, newDelta, oldVoiced, true});
 
       // Clear deltaPitch for any note containing this frame so changes are
       // visible immediately
@@ -1686,15 +1816,13 @@ void PianoRollComponent::applyPitchPoint(int frameIndex, int midiCents) {
     } else {
       auto &e = drawingEdits[it->second];
       e.newF0 = newFreq;
+      e.newDelta = newDelta;
       e.newVoiced = true;
     }
 
     audioData.f0[idx] = newFreq;
-    if (idx < static_cast<int>(audioData.basePitch.size()) &&
-        idx < static_cast<int>(audioData.deltaPitch.size())) {
-      float baseMidi = audioData.basePitch[static_cast<size_t>(idx)];
-      float newMidi = static_cast<float>(cents) / 100.0f;
-      audioData.deltaPitch[static_cast<size_t>(idx)] = newMidi - baseMidi;
+    if (idx < static_cast<int>(audioData.deltaPitch.size())) {
+      audioData.deltaPitch[static_cast<size_t>(idx)] = newDelta;
     }
     if (idx < static_cast<int>(audioData.voicedMask.size()))
       audioData.voicedMask[idx] = true;
@@ -1759,4 +1887,19 @@ void PianoRollComponent::startNewPitchCurve(int frameIndex, int midiCents) {
   activeDrawCurve->appendValue(midiCents);
   lastDrawFrame = frameIndex;
   lastDrawValueCents = midiCents;
+}
+
+void PianoRollComponent::drawSelectionRect(juce::Graphics &g) {
+  if (!boxSelector || !boxSelector->isSelecting())
+    return;
+
+  auto rect = boxSelector->getSelectionRect();
+
+  // Draw semi-transparent fill
+  g.setColour(juce::Colour::fromRGBA(0x30, 0x80, 0xFF, 0x40));
+  g.fillRect(rect);
+
+  // Draw border
+  g.setColour(juce::Colour::fromRGBA(0x30, 0x80, 0xFF, 0xC0));
+  g.drawRect(rect, 1.0f);
 }

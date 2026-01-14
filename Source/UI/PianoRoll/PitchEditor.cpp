@@ -227,7 +227,7 @@ void PitchEditor::endDrawing() {
     if (undoManager && project) {
         auto& audioData = project->getAudioData();
         auto action = std::make_unique<F0EditAction>(
-            &audioData.f0, &audioData.voicedMask, drawingEdits,
+            &audioData.f0, &audioData.deltaPitch, &audioData.voicedMask, drawingEdits,
             [this](int minFrame, int maxFrame) {
                 if (project) {
                     project->setF0DirtyRange(minFrame, maxFrame);
@@ -273,14 +273,23 @@ void PitchEditor::applyPitchPoint(int frameIndex, int midiCents) {
 
         const float newFreq = midiToFreq(static_cast<float>(cents) / 100.0f);
         const float oldF0 = audioData.f0[idx];
+        const float oldDelta = (idx < static_cast<int>(audioData.deltaPitch.size()))
+                                   ? audioData.deltaPitch[idx]
+                                   : 0.0f;
         const bool oldVoiced = (idx < static_cast<int>(audioData.voicedMask.size()))
                                    ? audioData.voicedMask[idx]
                                    : false;
 
+        float baseMidi = (idx < static_cast<int>(audioData.basePitch.size()))
+                             ? audioData.basePitch[static_cast<size_t>(idx)]
+                             : 0.0f;
+        float newMidi = static_cast<float>(cents) / 100.0f;
+        float newDelta = newMidi - baseMidi;
+
         auto it = drawingEditIndexByFrame.find(idx);
         if (it == drawingEditIndexByFrame.end()) {
             drawingEditIndexByFrame.emplace(idx, drawingEdits.size());
-            drawingEdits.push_back(F0FrameEdit{idx, oldF0, newFreq, oldVoiced, true});
+            drawingEdits.push_back(F0FrameEdit{idx, oldF0, newFreq, oldDelta, newDelta, oldVoiced, true});
 
             // Clear deltaPitch for notes containing this frame
             auto& notes = project->getNotes();
@@ -293,15 +302,13 @@ void PitchEditor::applyPitchPoint(int frameIndex, int midiCents) {
         } else {
             auto& e = drawingEdits[it->second];
             e.newF0 = newFreq;
+            e.newDelta = newDelta;
             e.newVoiced = true;
         }
 
         audioData.f0[idx] = newFreq;
-        if (idx < static_cast<int>(audioData.basePitch.size()) &&
-            idx < static_cast<int>(audioData.deltaPitch.size())) {
-            float baseMidi = audioData.basePitch[static_cast<size_t>(idx)];
-            float newMidi = static_cast<float>(cents) / 100.0f;
-            audioData.deltaPitch[static_cast<size_t>(idx)] = newMidi - baseMidi;
+        if (idx < static_cast<int>(audioData.deltaPitch.size())) {
+            audioData.deltaPitch[static_cast<size_t>(idx)] = newDelta;
         }
         if (idx < static_cast<int>(audioData.voicedMask.size()))
             audioData.voicedMask[idx] = true;
@@ -369,4 +376,165 @@ void PitchEditor::snapNoteToSemitone(Note* note) {
         if (onPitchEditFinished)
             onPitchEditFinished();
     }
+}
+
+void PitchEditor::startMultiNoteDrag(const std::vector<Note*>& notes, float y) {
+    if (notes.empty() || !project)
+        return;
+
+    draggedNotes = notes;
+    originalMidiNotes.clear();
+    originalF0ValuesMulti.clear();
+    dragStartY = y;
+
+    auto& audioData = project->getAudioData();
+    int f0Size = static_cast<int>(audioData.f0.size());
+
+    for (auto* note : draggedNotes) {
+        originalMidiNotes.push_back(note->getMidiNote());
+
+        // Capture delta slice for each note
+        int startFrame = note->getStartFrame();
+        int endFrame = note->getEndFrame();
+        int numFrames = endFrame - startFrame;
+
+        std::vector<float> delta(numFrames, 0.0f);
+        for (int i = 0; i < numFrames; ++i) {
+            int globalFrame = startFrame + i;
+            if (globalFrame >= 0 && globalFrame < static_cast<int>(audioData.deltaPitch.size()))
+                delta[i] = audioData.deltaPitch[static_cast<size_t>(globalFrame)];
+        }
+        note->setDeltaPitch(std::move(delta));
+
+        // Save original F0 values
+        std::vector<float> f0Values;
+        for (int i = startFrame; i < endFrame && i < f0Size; ++i)
+            f0Values.push_back(audioData.f0[i]);
+        originalF0ValuesMulti.push_back(std::move(f0Values));
+    }
+
+    isMultiDragging = true;
+}
+
+void PitchEditor::updateMultiNoteDrag(float y) {
+    if (!isMultiDragging || draggedNotes.empty() || !coordMapper)
+        return;
+
+    float deltaY = dragStartY - y;
+    float deltaSemitones = deltaY / coordMapper->getPixelsPerSemitone();
+
+    for (auto* note : draggedNotes) {
+        note->setPitchOffset(deltaSemitones);
+        note->markDirty();
+    }
+}
+
+void PitchEditor::endMultiNoteDrag() {
+    if (!isMultiDragging || draggedNotes.empty() || !project) {
+        isMultiDragging = false;
+        draggedNotes.clear();
+        originalMidiNotes.clear();
+        originalF0ValuesMulti.clear();
+        return;
+    }
+
+    float newOffset = draggedNotes[0]->getPitchOffset();
+    constexpr float CHANGE_THRESHOLD = 0.001f;
+    bool hasChange = std::abs(newOffset) >= CHANGE_THRESHOLD;
+
+    if (hasChange) {
+        auto& audioData = project->getAudioData();
+        int f0Size = static_cast<int>(audioData.f0.size());
+
+        int expandedStart = std::numeric_limits<int>::max();
+        int expandedEnd = std::numeric_limits<int>::min();
+
+        // Bake pitchOffset into midiNote for all notes
+        for (size_t i = 0; i < draggedNotes.size(); ++i) {
+            auto* note = draggedNotes[i];
+            note->setMidiNote(originalMidiNotes[i] + newOffset);
+            note->setPitchOffset(0.0f);
+
+            expandedStart = std::min(expandedStart, note->getStartFrame());
+            expandedEnd = std::max(expandedEnd, note->getEndFrame());
+        }
+
+        // Find adjacent notes to expand dirty range
+        const auto& allNotes = project->getNotes();
+        for (const auto& note : allNotes) {
+            if (note.getEndFrame() > expandedStart - 30 && note.getEndFrame() <= expandedStart)
+                expandedStart = std::min(expandedStart, note.getStartFrame());
+            if (note.getStartFrame() < expandedEnd + 30 && note.getStartFrame() >= expandedEnd)
+                expandedEnd = std::max(expandedEnd, note.getEndFrame());
+        }
+
+        // Rebuild pitch curves
+        PitchCurveProcessor::rebuildBaseFromNotes(*project);
+        PitchCurveProcessor::composeF0InPlace(*project, false);
+
+        if (onBasePitchCacheInvalidated)
+            onBasePitchCacheInvalidated();
+
+        // Mark dirty range
+        int smoothStart = std::max(0, expandedStart - 60);
+        int smoothEnd = std::min(f0Size, expandedEnd + 60);
+        project->setF0DirtyRange(smoothStart, smoothEnd);
+
+        // Create undo action for multi-note drag
+        if (undoManager) {
+            std::vector<F0FrameEdit> f0Edits;
+            for (size_t i = 0; i < draggedNotes.size(); ++i) {
+                auto* note = draggedNotes[i];
+                int startFrame = note->getStartFrame();
+                int endFrame = note->getEndFrame();
+                for (int j = startFrame; j < endFrame && j < f0Size; ++j) {
+                    int localIdx = j - startFrame;
+                    F0FrameEdit edit;
+                    edit.idx = j;
+                    edit.oldF0 = (localIdx < static_cast<int>(originalF0ValuesMulti[i].size()))
+                                     ? originalF0ValuesMulti[i][localIdx]
+                                     : 0.0f;
+                    edit.newF0 = audioData.f0[static_cast<size_t>(j)];
+                    f0Edits.push_back(edit);
+                }
+            }
+
+            int capturedExpandedStart = expandedStart;
+            int capturedExpandedEnd = expandedEnd;
+            int capturedF0Size = f0Size;
+            std::vector<Note*> capturedNotes = draggedNotes;
+            std::vector<float> capturedOriginalMidi = originalMidiNotes;
+            float capturedNewOffset = newOffset;
+
+            auto action = std::make_unique<MultiNotePitchDragAction>(
+                capturedNotes, &audioData.f0, capturedOriginalMidi, capturedNewOffset,
+                std::move(f0Edits),
+                [this, capturedExpandedStart, capturedExpandedEnd, capturedF0Size](const std::vector<Note*>&) {
+                    if (project) {
+                        PitchCurveProcessor::rebuildBaseFromNotes(*project);
+                        PitchCurveProcessor::composeF0InPlace(*project, false);
+                        if (onBasePitchCacheInvalidated)
+                            onBasePitchCacheInvalidated();
+                        int smoothStart = std::max(0, capturedExpandedStart - 60);
+                        int smoothEnd = std::min(capturedF0Size, capturedExpandedEnd + 60);
+                        project->setF0DirtyRange(smoothStart, smoothEnd);
+                    }
+                });
+            undoManager->addAction(std::move(action));
+        }
+
+        if (onPitchEdited)
+            onPitchEdited();
+        if (onPitchEditFinished)
+            onPitchEditFinished();
+    } else {
+        // No meaningful change: reset pitchOffset
+        for (auto* note : draggedNotes)
+            note->setPitchOffset(0.0f);
+    }
+
+    isMultiDragging = false;
+    draggedNotes.clear();
+    originalMidiNotes.clear();
+    originalF0ValuesMulti.clear();
 }

@@ -151,7 +151,7 @@ void AudioEngine::changeListenerCallback(juce::ChangeBroadcaster* source)
 {
 }
 
-void AudioEngine::loadWaveform(const juce::AudioBuffer<float>& buffer, int sampleRate)
+void AudioEngine::loadWaveform(const juce::AudioBuffer<float>& buffer, int sampleRate, bool preservePosition)
 {
     // CRITICAL: Validate this pointer before accessing any member variables
     // This helps catch cases where the object has been destroyed
@@ -173,7 +173,11 @@ void AudioEngine::loadWaveform(const juce::AudioBuffer<float>& buffer, int sampl
         const juce::SpinLock::ScopedLockType lock(waveformLock);
         currentWaveform = buffer;
         waveformSampleRate = sampleRate;
-        currentPosition.store(0);
+
+        if (!preservePosition) {
+            currentPosition.store(0);
+            fractionalPosition = 0.0;
+        }
 
         // Update playback ratio for sample rate conversion
         if (currentSampleRate > 0)
@@ -182,7 +186,6 @@ void AudioEngine::loadWaveform(const juce::AudioBuffer<float>& buffer, int sampl
             playbackRatio = 1.0;
 
         interpolator.reset();
-        fractionalPosition = 0.0;
     }
 
     DBG("Loaded waveform: " + juce::String(buffer.getNumSamples()) + " samples at " +

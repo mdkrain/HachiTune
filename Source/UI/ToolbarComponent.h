@@ -103,6 +103,7 @@ private:
     // Edit mode buttons
     ToolButton selectModeButton { "Select" };
     ToolButton drawModeButton { "Draw" };
+    ToolButton splitModeButton { "Split" };
     ToolButton followButton { "Follow" };
     juce::Rectangle<int> toolContainerBounds;  // For drawing container background
     
@@ -129,7 +130,7 @@ private:
     double totalTime = 0.0;
     bool isPlaying = false;
     bool followPlayback = true;
-    int currentEditModeInt = 0;  // 0 = Select, 1 = Draw
+    int currentEditModeInt = 0;  // 0 = Select, 1 = Draw, 2 = Split
 
 #if JUCE_MAC
     juce::ComponentDragger dragger;

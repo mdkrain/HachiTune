@@ -63,6 +63,7 @@ public:
     Note* getNoteAtFrame(int frame);
     std::vector<Note*> getNotesInRange(int startFrame, int endFrame);
     std::vector<Note*> getSelectedNotes();
+    bool removeNoteByStartFrame(int startFrame);
     std::vector<Note*> getDirtyNotes();
     void deselectAllNotes();
     void clearAllDirty();

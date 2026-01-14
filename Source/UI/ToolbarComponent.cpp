@@ -15,6 +15,7 @@ ToolbarComponent::ToolbarComponent()
     auto endIcon = SvgUtils::loadSvg(BinaryData::moveendline_svg, BinaryData::moveendline_svgSize, juce::Colours::white);
     auto cursorIcon = SvgUtils::loadSvg(BinaryData::cursor_24_filled_svg, BinaryData::cursor_24_filled_svgSize, juce::Colours::white);
     auto pitchEditIcon = SvgUtils::loadSvg(BinaryData::pitch_edit_24_filled_svg, BinaryData::pitch_edit_24_filled_svgSize, juce::Colours::white);
+    auto scissorsIcon = SvgUtils::loadSvg(BinaryData::scissors_24_filled_svg, BinaryData::scissors_24_filled_svgSize, juce::Colours::white);
     auto followIcon = SvgUtils::loadSvg(BinaryData::follow24filled_svg, BinaryData::follow24filled_svgSize, juce::Colours::white);
 
     playButton.setImages(playIcon.get());
@@ -23,6 +24,7 @@ ToolbarComponent::ToolbarComponent()
     goToEndButton.setImages(endIcon.get());
     selectModeButton.setImages(cursorIcon.get());
     drawModeButton.setImages(pitchEditIcon.get());
+    splitModeButton.setImages(scissorsIcon.get());
     followButton.setImages(followIcon.get());
 
     // Set edge indent for icon padding (makes icons smaller within button bounds)
@@ -32,6 +34,7 @@ ToolbarComponent::ToolbarComponent()
     goToEndButton.setEdgeIndent(4);
     selectModeButton.setEdgeIndent(6);
     drawModeButton.setEdgeIndent(6);
+    splitModeButton.setEdgeIndent(6);
     followButton.setEdgeIndent(6);
 
     // Store pause icon for later use
@@ -45,6 +48,7 @@ ToolbarComponent::ToolbarComponent()
     addAndMakeVisible(goToEndButton);
     addAndMakeVisible(selectModeButton);
     addAndMakeVisible(drawModeButton);
+    addAndMakeVisible(splitModeButton);
     addAndMakeVisible(followButton);
 
     // Plugin mode buttons (hidden by default)
@@ -63,12 +67,14 @@ ToolbarComponent::ToolbarComponent()
     goToEndButton.addListener(this);
     selectModeButton.addListener(this);
     drawModeButton.addListener(this);
+    splitModeButton.addListener(this);
     followButton.addListener(this);
     reanalyzeButton.addListener(this);
 
     // Set localized text (tooltips for icon buttons)
     selectModeButton.setTooltip(TR("toolbar.select"));
     drawModeButton.setTooltip(TR("toolbar.draw"));
+    splitModeButton.setTooltip(TR("toolbar.split"));
     followButton.setTooltip(TR("toolbar.follow"));
     reanalyzeButton.setButtonText(TR("toolbar.reanalyze"));
     zoomLabel.setText(TR("toolbar.zoom"), juce::dontSendNotification);
@@ -176,16 +182,17 @@ void ToolbarComponent::resized()
     }
     bounds.removeFromLeft(20);
 
-    // Edit mode buttons in a container (3 buttons: select, draw, follow)
+    // Edit mode buttons in a container (4 buttons: select, draw, split, follow)
     const int toolButtonSize = 32;
     const int toolContainerPadding = 4;
-    const int numToolButtons = pluginMode ? 2 : 3;  // Hide follow in plugin mode
+    const int numToolButtons = pluginMode ? 3 : 4;  // Hide follow in plugin mode
     const int toolContainerWidth = toolButtonSize * numToolButtons + toolContainerPadding * 2;
     toolContainerBounds = bounds.removeFromLeft(toolContainerWidth).reduced(0, 2);
 
     auto toolArea = toolContainerBounds.reduced(toolContainerPadding, toolContainerPadding);
     selectModeButton.setBounds(toolArea.removeFromLeft(toolButtonSize));
     drawModeButton.setBounds(toolArea.removeFromLeft(toolButtonSize));
+    splitModeButton.setBounds(toolArea.removeFromLeft(toolButtonSize));
     if (!pluginMode)
         followButton.setBounds(toolArea.removeFromLeft(toolButtonSize));
 
@@ -255,6 +262,12 @@ void ToolbarComponent::buttonClicked(juce::Button* button)
         if (onEditModeChanged)
             onEditModeChanged(EditMode::Draw);
     }
+    else if (button == &splitModeButton)
+    {
+        setEditMode(EditMode::Split);
+        if (onEditModeChanged)
+            onEditModeChanged(EditMode::Split);
+    }
     else if (button == &followButton)
     {
         followPlayback = !followPlayback;
@@ -288,9 +301,10 @@ void ToolbarComponent::setTotalTime(double time)
 
 void ToolbarComponent::setEditMode(EditMode mode)
 {
-    currentEditModeInt = (mode == EditMode::Draw) ? 1 : 0;
+    currentEditModeInt = static_cast<int>(mode);
     selectModeButton.setActive(mode == EditMode::Select);
     drawModeButton.setActive(mode == EditMode::Draw);
+    splitModeButton.setActive(mode == EditMode::Split);
 }
 
 void ToolbarComponent::setZoom(float pixelsPerSecond)

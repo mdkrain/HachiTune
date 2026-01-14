@@ -24,7 +24,7 @@ public:
     
     // Playback control
     void setProject(Project* proj) { project = proj; }
-    void loadWaveform(const juce::AudioBuffer<float>& buffer, int sampleRate);
+    void loadWaveform(const juce::AudioBuffer<float>& buffer, int sampleRate, bool preservePosition = false);
     
     void play();
     void pause();

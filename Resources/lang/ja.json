@@ -13,6 +13,7 @@
   "toolbar.stop": "停止",
   "toolbar.select": "選択",
   "toolbar.draw": "描画",
+  "toolbar.split": "分割",
   "toolbar.follow": "追従",
   "toolbar.zoom": "ズーム:",
   "toolbar.reanalyze": "再分析",
