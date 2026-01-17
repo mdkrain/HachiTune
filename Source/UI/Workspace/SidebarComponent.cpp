@@ -21,24 +21,13 @@ void SidebarButton::paint(juce::Graphics& g)
 
     g.fillRoundedRectangle(bounds, 6.0f);
 
-    // Active indicator bar on the left
-    if (active)
-    {
-        g.setColour(juce::Colour(COLOR_PRIMARY));
-        g.fillRoundedRectangle(0.0f, bounds.getY() + 8, 3.0f, bounds.getHeight() - 16, 1.5f);
-    }
-
     // Icon
     if (iconDrawable != nullptr)
     {
         auto iconBounds = bounds.reduced(8);
         iconDrawable->setTransformToFit(iconBounds, juce::RectanglePlacement::centred);
 
-        if (active)
-            iconDrawable->replaceColour(juce::Colours::white, juce::Colour(COLOR_PRIMARY));
-        else
-            iconDrawable->replaceColour(juce::Colour(COLOR_PRIMARY), juce::Colours::white);
-
+        // Keep icon white in all states
         iconDrawable->draw(g, active || hovered ? 1.0f : 0.7f);
     }
 }
@@ -112,7 +101,8 @@ void SidebarComponent::addButton(const juce::String& id, const juce::String& too
 
     if (svgData.isNotEmpty())
     {
-        auto icon = SvgUtils::createDrawableFromSvg(svgData);
+        // Use tint to ensure icon is white for dark theme
+        auto icon = SvgUtils::createDrawableFromSvg(svgData, juce::Colours::white);
         button->setIcon(std::move(icon));
     }
 

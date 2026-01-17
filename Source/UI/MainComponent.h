@@ -79,6 +79,7 @@ public:
 private:
   void openFile();
   void exportFile();
+  void exportMidiFile();
   void play();
   void pause();
   void stop();

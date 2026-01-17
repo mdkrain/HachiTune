@@ -127,3 +127,44 @@ void DarkLookAndFeel::drawTickBox(juce::Graphics& g, juce::Component& component,
         g.drawRoundedRectangle(boxBounds, cornerSize, 1.5f);
     }
 }
+
+void DarkLookAndFeel::drawProgressBar(juce::Graphics& g, juce::ProgressBar& bar,
+                                       int width, int height, double progress,
+                                       const juce::String& textToShow)
+{
+    auto background = bar.findColour(juce::ProgressBar::backgroundColourId);
+    auto foreground = bar.findColour(juce::ProgressBar::foregroundColourId);
+
+    auto barBounds = juce::Rectangle<float>(0.0f, 0.0f, (float)width, (float)height);
+    auto cornerSize = 4.0f;
+
+    // Background
+    g.setColour(background);
+    g.fillRoundedRectangle(barBounds, cornerSize);
+
+    // Foreground bar
+    if (progress >= 0.0 && progress <= 1.0)
+    {
+        auto fillBounds = barBounds.withWidth(barBounds.getWidth() * (float)progress);
+        g.setColour(foreground);
+        g.fillRoundedRectangle(fillBounds, cornerSize);
+    }
+    else
+    {
+        // Indeterminate: draw animated bar
+        auto time = juce::Time::getMillisecondCounter();
+        auto pos = (float)(time % 1000) / 1000.0f;
+        auto barWidth = barBounds.getWidth() * 0.3f;
+        auto x = barBounds.getX() + (barBounds.getWidth() - barWidth) * pos;
+        g.setColour(foreground);
+        g.fillRoundedRectangle(x, barBounds.getY(), barWidth, barBounds.getHeight(), cornerSize);
+    }
+
+    // Text (white color)
+    if (textToShow.isNotEmpty())
+    {
+        g.setColour(juce::Colours::white);
+        g.setFont((float)height * 0.6f);
+        g.drawText(textToShow, barBounds, juce::Justification::centred, false);
+    }
+}

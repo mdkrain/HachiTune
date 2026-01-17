@@ -1,4 +1,6 @@
 #include "MainComponent.h"
+#include "../Audio/IO/MidiExporter.h"
+#include "../Models/ProjectSerializer.h"
 #include "../Utils/AppLogger.h"
 #include "../Utils/Constants.h"
 #include "../Utils/F0Smoother.h"
@@ -134,57 +136,11 @@ MainComponent::MainComponent(bool enableAudioDevice)
   menuHandler->onOpenFile = [this]() { openFile(); };
   menuHandler->onSaveProject = [this]() { saveProject(); };
   menuHandler->onExportFile = [this]() { exportFile(); };
+  menuHandler->onExportMidi = [this]() { exportMidiFile(); };
   menuHandler->onUndo = [this]() { undo(); };
   menuHandler->onRedo = [this]() { redo(); };
   menuHandler->onShowSettings = [this]() { showSettings(); };
   menuHandler->onQuit = [this]() { juce::JUCEApplication::getInstance()->systemRequestedQuit(); };
-  menuHandler->onExportSOMEDebug = [this]() {
-    if (!project) return;
-
-    auto& audioData = project->getAudioData();
-    if (audioData.waveform.getNumSamples() == 0) {
-      juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::InfoIcon,
-        "Export SOME Debug", "No audio loaded.");
-      return;
-    }
-
-    if (!someDetector || !someDetector->isLoaded()) {
-      juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
-        "Export SOME Debug", "SOME detector not loaded.");
-      return;
-    }
-
-    // Run SOME inference directly
-    const float* samples = audioData.waveform.getReadPointer(0);
-    int numSamples = audioData.waveform.getNumSamples();
-
-    auto someNotes = someDetector->detectNotes(samples, numSamples, SOMEDetector::SAMPLE_RATE);
-
-    if (someNotes.empty()) {
-      juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::InfoIcon,
-        "Export SOME Debug", "SOME detected no notes.");
-      return;
-    }
-
-    // Build CSV with raw SOME output
-    juce::String csv = "index,startFrame,endFrame,midiNote,isRest\n";
-    int idx = 0;
-    for (const auto& note : someNotes) {
-      csv += juce::String(idx++) + ","
-           + juce::String(note.startFrame) + ","
-           + juce::String(note.endFrame) + ","
-           + juce::String(note.midiNote, 6) + ","
-           + juce::String(note.isRest ? 1 : 0) + "\n";
-    }
-
-    // Save to file
-    auto debugFile = juce::File::getSpecialLocation(juce::File::userDesktopDirectory)
-                       .getChildFile("some_raw_output.csv");
-    debugFile.replaceWithText(csv);
-
-    juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::InfoIcon,
-      "Export SOME Debug", "SOME raw output: " + juce::String(someNotes.size()) + " notes\nSaved to:\n" + debugFile.getFullPathName());
-  };
 
   // View menu callbacks
   menuHandler->setShowDeltaPitch(settingsManager->getShowDeltaPitch());
@@ -219,9 +175,9 @@ MainComponent::MainComponent(bool enableAudioDevice)
   workspace.setMainContent(&pianoRoll);
 
   // Add parameter panel to workspace sidebar
-  // SVG icon for parameters panel (sliders icon)
-  const juce::String paramIconSvg = R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><circle cx="4" cy="12" r="2"/><circle cx="12" cy="10" r="2"/><circle cx="20" cy="14" r="2"/></svg>)";
-  workspace.addPanel("parameters", "Parameters", paramIconSvg, &parameterPanel, true);
+  // SVG icon for parameters panel (mixer faders)
+  const juce::String paramIconSvg = R"(<svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="2" width="2" height="20" rx="1"/><circle cx="4" cy="9" r="3"/><rect x="11" y="2" width="2" height="20" rx="1"/><circle cx="12" cy="15" r="3"/><rect x="19" y="2" width="2" height="20" rx="1"/><circle cx="20" cy="6" r="3"/></svg>)";
+  workspace.addPanel("parameters", TR("panel.parameters"), paramIconSvg, &parameterPanel, true);
 
   // Configure toolbar for plugin mode
   if (isPluginMode())
@@ -498,14 +454,14 @@ void MainComponent::saveProject() {
     // Default next to audio if possible
     auto audio = project->getFilePath();
     if (audio.existsAsFile())
-      target = audio.withFileExtension("peproj");
+      target = audio.withFileExtension("htpx");
     else
       target =
           juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
-              .getChildFile("Untitled.peproj");
+              .getChildFile("Untitled.htpx");
 
-    fileChooser = std::make_unique<juce::FileChooser>("Save project...", target,
-                                                      "*.peproj");
+    fileChooser = std::make_unique<juce::FileChooser>(TR("dialog.save_project"), target,
+                                                      "*.htpx");
 
     auto chooserFlags = juce::FileBrowserComponent::saveMode |
                         juce::FileBrowserComponent::canSelectFiles |
@@ -517,12 +473,12 @@ void MainComponent::saveProject() {
         return;
 
       if (file.getFileExtension().isEmpty())
-        file = file.withFileExtension("peproj");
+        file = file.withFileExtension("htpx");
 
-      toolbar.showProgress("Saving...");
+      toolbar.showProgress(TR("progress.saving"));
       toolbar.setProgress(-1.0f);
 
-      const bool ok = project->saveToFile(file);
+      const bool ok = ProjectSerializer::saveToFile(*project, file);
       if (ok)
         project->setProjectFilePath(file);
 
@@ -532,10 +488,10 @@ void MainComponent::saveProject() {
     return;
   }
 
-  toolbar.showProgress("Saving...");
+  toolbar.showProgress(TR("progress.saving"));
   toolbar.setProgress(-1.0f);
 
-  const bool ok = project->saveToFile(target);
+  const bool ok = ProjectSerializer::saveToFile(*project, target);
   juce::ignoreUnused(ok);
 
   toolbar.hideProgress();
@@ -543,7 +499,7 @@ void MainComponent::saveProject() {
 
 void MainComponent::openFile() {
   fileChooser = std::make_unique<juce::FileChooser>(
-      "Select an audio file...", juce::File{}, "*.wav;*.mp3;*.flac;*.aiff");
+      TR("dialog.select_audio"), juce::File{}, "*.wav;*.mp3;*.flac;*.aiff");
 
   auto chooserFlags = juce::FileBrowserComponent::openMode |
                       juce::FileBrowserComponent::canSelectFiles;
@@ -565,9 +521,9 @@ void MainComponent::loadAudioFile(const juce::File &file) {
   loadingProgress = 0.0;
   {
     const juce::ScopedLock sl(loadingMessageLock);
-    loadingMessage = "Loading audio...";
+    loadingMessage = TR("progress.loading_audio");
   }
-  toolbar.showProgress("Loading audio...");
+  toolbar.showProgress(TR("progress.loading_audio"));
   toolbar.setProgress(0.0f);
 
   if (loaderThread.joinable())
@@ -582,7 +538,7 @@ void MainComponent::loadAudioFile(const juce::File &file) {
       loadingMessage = msg;
     };
 
-    updateProgress(0.05, "Loading audio...");
+    updateProgress(0.05, TR("progress.loading_audio"));
 
     juce::AudioFormatManager formatManager;
     formatManager.registerBasicFormats();
@@ -666,7 +622,7 @@ void MainComponent::loadAudioFile(const juce::File &file) {
       return;
     }
 
-    updateProgress(0.25, "Analyzing audio...");
+    updateProgress(0.25, TR("progress.analyzing_audio"));
     analyzeAudio(*newProject, updateProgress);
 
     if (cancelLoading.load()) {
@@ -961,7 +917,7 @@ void MainComponent::analyzeAudio(
         audioData.f0, audioData.voicedMask);
   }
 
-  onProgress(0.75, "Loading vocoder...");
+  onProgress(0.75, TR("progress.loading_vocoder"));
   // Load vocoder model (model loading happens in background thread)
   auto modelPath =
       PlatformPaths::getModelsDirectory().getChildFile("pc_nsf_hifigan.onnx");
@@ -990,7 +946,7 @@ void MainComponent::exportFile() {
   if (!project)
     return;
 
-  fileChooser = std::make_unique<juce::FileChooser>("Save audio file...",
+  fileChooser = std::make_unique<juce::FileChooser>(TR("dialog.save_audio"),
                                                     juce::File{}, "*.wav");
 
   auto chooserFlags = juce::FileBrowserComponent::saveMode |
@@ -1003,15 +959,15 @@ void MainComponent::exportFile() {
       auto &audioData = project->getAudioData();
 
       // Show progress
-      toolbar.showProgress("Exporting audio...");
+      toolbar.showProgress(TR("progress.exporting_audio"));
       toolbar.setProgress(0.0f);
 
       // Delete existing file if it exists (to ensure clean replacement)
       if (file.existsAsFile()) {
         if (!file.deleteFile()) {
           toolbar.hideProgress();
-          StyledMessageBox::show(this, "Export Failed",
-                                 "Could not delete existing file:\n" +
+          StyledMessageBox::show(this, TR("dialog.export_failed"),
+                                 TR("dialog.failed_delete") + "\n" +
                                      file.getFullPathName(),
                                  StyledMessageBox::WarningIcon);
           return;
@@ -1026,8 +982,8 @@ void MainComponent::exportFile() {
 
       if (!outputStream->openedOk()) {
         toolbar.hideProgress();
-        StyledMessageBox::show(this, "Export Failed",
-                               "Could not open file for writing:\n" +
+        StyledMessageBox::show(this, TR("dialog.export_failed"),
+                               TR("dialog.failed_open") + "\n" +
                                    file.getFullPathName(),
                                StyledMessageBox::WarningIcon);
         return;
@@ -1046,8 +1002,8 @@ void MainComponent::exportFile() {
 
       if (writer == nullptr) {
         toolbar.hideProgress();
-        StyledMessageBox::show(this, "Export Failed",
-                               "Could not create audio writer for:\n" +
+        StyledMessageBox::show(this, TR("dialog.export_failed"),
+                               TR("dialog.failed_create_writer") + "\n" +
                                    file.getFullPathName(),
                                StyledMessageBox::WarningIcon);
         return;
@@ -1070,17 +1026,84 @@ void MainComponent::exportFile() {
 
       if (writeSuccess) {
         toolbar.hideProgress();
-        StyledMessageBox::show(this, "Export Complete",
-                               "Audio exported successfully to:\n" +
+        StyledMessageBox::show(this, TR("dialog.export_complete"),
+                               TR("dialog.audio_exported") + "\n" +
                                    file.getFullPathName(),
                                StyledMessageBox::InfoIcon);
       } else {
         toolbar.hideProgress();
-        StyledMessageBox::show(this, "Export Failed",
-                               "Failed to write audio data to:\n" +
+        StyledMessageBox::show(this, TR("dialog.export_failed"),
+                               TR("dialog.failed_write") + "\n" +
                                    file.getFullPathName(),
                                StyledMessageBox::WarningIcon);
       }
+    }
+  });
+}
+
+void MainComponent::exportMidiFile() {
+  if (!project)
+    return;
+
+  const auto& notes = project->getNotes();
+  if (notes.empty()) {
+    StyledMessageBox::show(this, TR("dialog.export_failed"),
+                           TR("dialog.no_notes_to_export"),
+                           StyledMessageBox::WarningIcon);
+    return;
+  }
+
+  // Suggest filename based on project or audio file
+  juce::File defaultFile;
+  if (project->getFilePath().existsAsFile()) {
+    defaultFile = project->getFilePath().withFileExtension("mid");
+  } else if (project->getProjectFilePath().existsAsFile()) {
+    defaultFile = project->getProjectFilePath().withFileExtension("mid");
+  }
+
+  fileChooser = std::make_unique<juce::FileChooser>(
+      TR("dialog.export_midi"), defaultFile, "*.mid;*.midi");
+
+  auto chooserFlags = juce::FileBrowserComponent::saveMode |
+                      juce::FileBrowserComponent::canSelectFiles |
+                      juce::FileBrowserComponent::warnAboutOverwriting;
+
+  fileChooser->launchAsync(chooserFlags, [this](const juce::FileChooser& fc) {
+    auto file = fc.getResult();
+    if (file == juce::File{})
+      return;
+
+    // Ensure .mid extension
+    if (file.getFileExtension().isEmpty())
+      file = file.withFileExtension("mid");
+
+    // Show progress
+    toolbar.showProgress(TR("progress.exporting_midi"));
+    toolbar.setProgress(0.3f);
+
+    // Configure export options
+    MidiExporter::ExportOptions options;
+    options.tempo = 120.0f;           // Default BPM
+    options.ticksPerQuarterNote = 480;
+    options.velocity = 100;
+    options.quantizePitch = true;     // Round to nearest semitone
+
+    toolbar.setProgress(0.6f);
+
+    // Export using adjusted pitch data (includes user edits)
+    bool success = MidiExporter::exportToFile(project->getNotes(), file, options);
+
+    toolbar.setProgress(1.0f);
+    toolbar.hideProgress();
+
+    if (success) {
+      StyledMessageBox::show(this, TR("dialog.export_complete"),
+                             TR("dialog.midi_exported") + "\n" + file.getFullPathName(),
+                             StyledMessageBox::InfoIcon);
+    } else {
+      StyledMessageBox::show(this, TR("dialog.export_failed"),
+                             TR("dialog.failed_write_midi") + "\n" + file.getFullPathName(),
+                             StyledMessageBox::WarningIcon);
     }
   });
 }
@@ -1591,7 +1614,7 @@ void MainComponent::setHostAudio(const juce::AudioBuffer<float> &buffer,
   hasOriginalWaveform = true;
 
   // Show analyzing progress
-  toolbar.showProgress("Analyzing...");
+  toolbar.showProgress(TR("progress.analyzing"));
 
   // Run analysis in background thread to avoid blocking UI
   // Use the same analysis logic as loadAudioFile for code sharing

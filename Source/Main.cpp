@@ -3,6 +3,7 @@
 
 #include "JuceHeader.h"
 #include "UI/MainComponent.h"
+#include "UI/StyledComponents.h"
 #include "Utils/AppLogger.h"
 #include "Utils/Constants.h"
 #include "Utils/Localization.h"
@@ -26,6 +27,8 @@ public:
   void initialise(const juce::String &commandLine) override {
     juce::ignoreUnused(commandLine);
     LOG("========== APP STARTING ==========");
+    LOG("Initializing fonts...");
+    AppFont::initialize();
     LOG("Loading localization...");
     Localization::loadFromSettings();
     LOG("Localization loaded, creating MainWindow...");

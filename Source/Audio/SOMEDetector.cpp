@@ -1,4 +1,5 @@
 #include "SOMEDetector.h"
+#include "../Utils/Localization.h"
 #include <cmath>
 #include <algorithm>
 #include <numeric>
@@ -324,7 +325,7 @@ std::vector<SOMEDetector::NoteEvent> SOMEDetector::detectNotesWithProgress(
         if (!inferChunk(chunkData, noteMidi, noteRest, noteDur))
         {
             juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
-                "SOME Error", "Inference failed");
+                TR("error.some_error"), TR("error.inference_failed"));
             return {};
         }
 

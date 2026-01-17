@@ -2,6 +2,7 @@
 
 #if JucePlugin_Enable_ARA
 
+#include "../Models/ProjectSerializer.h"
 #include "../UI/MainComponent.h"
 
 //==============================================================================
@@ -193,8 +194,12 @@ bool PitchEditorDocumentController::doRestoreObjectsFromStream(juce::ARAInputStr
     input.read(data.getData(), static_cast<int>(dataSize));
 
     if (mainComponent && mainComponent->getProject()) {
-        if (auto xml = juce::AudioProcessor::getXmlFromBinary(data.getData(), static_cast<int>(data.getSize())))
-            mainComponent->getProject()->fromXml(*xml);
+        juce::String jsonString(juce::CharPointer_UTF8(static_cast<const char*>(data.getData())),
+                                data.getSize());
+        auto json = juce::JSON::parse(jsonString);
+        if (json.isObject()) {
+            ProjectSerializer::fromJson(*mainComponent->getProject(), json);
+        }
     }
 
     return !input.failed();
@@ -207,17 +212,11 @@ bool PitchEditorDocumentController::doStoreObjectsToStream(juce::ARAOutputStream
         return true;
     }
 
-    auto xml = mainComponent->getProject()->toXml();
-    if (!xml) {
-        output.writeInt64(0);
-        return true;
-    }
+    auto json = ProjectSerializer::toJson(*mainComponent->getProject());
+    auto jsonString = juce::JSON::toString(json, false);
 
-    juce::MemoryBlock data;
-    juce::AudioProcessor::copyXmlToBinary(*xml, data);
-
-    output.writeInt64(static_cast<juce::int64>(data.getSize()));
-    return output.write(data.getData(), static_cast<int>(data.getSize()));
+    output.writeInt64(static_cast<juce::int64>(jsonString.getNumBytesAsUTF8()));
+    return output.write(jsonString.toRawUTF8(), static_cast<int>(jsonString.getNumBytesAsUTF8()));
 }
 
 #endif // JucePlugin_Enable_ARA

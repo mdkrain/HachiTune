@@ -49,7 +49,10 @@ public:
         auto locale = juce::SystemStats::getUserLanguage();
 
         juce::String langCode = "en";
-        if (locale.startsWith("zh"))
+        if (locale.startsWith("zh-TW") || locale.startsWith("zh_TW") ||
+            locale.startsWith("zh-Hant"))
+            langCode = "zh-TW";
+        else if (locale.startsWith("zh"))
             langCode = "zh";
         else if (locale.startsWith("ja"))
             langCode = "ja";

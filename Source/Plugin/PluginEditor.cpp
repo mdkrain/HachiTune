@@ -1,5 +1,6 @@
 #include "PluginEditor.h"
 #include "HostCompatibility.h"
+#include "../UI/StyledComponents.h"
 
 #if JucePlugin_Enable_ARA
 #include "ARADocumentController.h"
@@ -12,6 +13,9 @@ PitchEditorAudioProcessorEditor::PitchEditorAudioProcessorEditor(PitchEditorAudi
     , AudioProcessorEditorARAExtension(&p)
 #endif
 {
+    // Initialize app font
+    AppFont::initialize();
+
     addAndMakeVisible(mainComponent);
     audioProcessor.setMainComponent(&mainComponent);
 

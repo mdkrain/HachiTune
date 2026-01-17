@@ -1,4 +1,5 @@
 #include "IncrementalSynthesizer.h"
+#include "../../Utils/Localization.h"
 
 IncrementalSynthesizer::IncrementalSynthesizer() = default;
 
@@ -131,7 +132,7 @@ void IncrementalSynthesizer::synthesizeRegion(ProgressCallback onProgress,
         return;
     }
 
-    if (onProgress) onProgress("Synthesizing...");
+    if (onProgress) onProgress(TR("progress.synthesizing"));
 
     // Cancel previous job
     if (cancelFlag)

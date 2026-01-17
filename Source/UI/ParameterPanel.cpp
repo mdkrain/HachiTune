@@ -217,7 +217,7 @@ void ParameterPanel::updateFromNote()
     }
     else
     {
-        noteInfoLabel.setText("No note selected", juce::dontSendNotification);
+        noteInfoLabel.setText(TR("param.no_selection"), juce::dontSendNotification);
         pitchOffsetSlider.setValue(0.0);
         pitchOffsetSlider.setEnabled(false);
     }

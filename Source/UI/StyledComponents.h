@@ -5,12 +5,137 @@
 #include <cmath>
 
 /**
+ * Global font manager - loads custom font from Resources/fonts/
+ * Falls back to system font if not found.
+ */
+class AppFont
+{
+public:
+    static void initialize()
+    {
+        auto& instance = getInstance();
+        if (instance.initialized)
+            return;
+
+        instance.initialized = true;
+
+        // Try to load custom font from Resources/fonts/
+        juce::File appDir = juce::File::getSpecialLocation(juce::File::currentExecutableFile).getParentDirectory();
+
+        // Check multiple possible locations
+        juce::StringArray fontPaths = {
+            appDir.getChildFile("Resources/fonts/NotoSansCJKjp-Regular.otf").getFullPathName(),
+            appDir.getChildFile("../Resources/fonts/NotoSansCJKjp-Regular.otf").getFullPathName(),
+            appDir.getChildFile("fonts/NotoSansCJKjp-Regular.otf").getFullPathName(),
+#if JUCE_MAC
+            appDir.getChildFile("../Resources/fonts/NotoSansCJKjp-Regular.otf").getFullPathName(),
+#endif
+        };
+
+        for (const auto& path : fontPaths)
+        {
+            juce::File fontFile(path);
+            if (fontFile.existsAsFile())
+            {
+                juce::MemoryBlock fontData;
+                if (fontFile.loadFileAsData(fontData))
+                {
+                    instance.customTypeface = juce::Typeface::createSystemTypefaceFor(
+                        fontData.getData(), fontData.getSize());
+                    if (instance.customTypeface != nullptr)
+                    {
+                        instance.fontLoaded = true;
+                        DBG("Loaded custom font: " + path);
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (!instance.fontLoaded)
+        {
+            DBG("Custom font not found, using system font");
+        }
+    }
+
+    static juce::Font getFont(float height = 14.0f)
+    {
+        auto& instance = getInstance();
+        if (instance.fontLoaded && instance.customTypeface != nullptr)
+            return juce::Font(instance.customTypeface).withHeight(height);
+
+        // Fallback to system font
+#if JUCE_MAC
+        return juce::Font("Hiragino Sans", height, juce::Font::plain);
+#elif JUCE_WINDOWS
+        return juce::Font("Yu Gothic UI", height, juce::Font::plain);
+#else
+        return juce::Font(height);
+#endif
+    }
+
+    static juce::Font getBoldFont(float height = 14.0f)
+    {
+        auto& instance = getInstance();
+        if (instance.fontLoaded && instance.customTypeface != nullptr)
+            return juce::Font(instance.customTypeface).withHeight(height).boldened();
+
+        // Fallback to system font
+#if JUCE_MAC
+        return juce::Font("Hiragino Sans", height, juce::Font::bold);
+#elif JUCE_WINDOWS
+        return juce::Font("Yu Gothic UI", height, juce::Font::bold);
+#else
+        return juce::Font(height).boldened();
+#endif
+    }
+
+    static bool isCustomFontLoaded()
+    {
+        return getInstance().fontLoaded;
+    }
+
+private:
+    AppFont() = default;
+
+    static AppFont& getInstance()
+    {
+        static AppFont instance;
+        return instance;
+    }
+
+    juce::Typeface::Ptr customTypeface;
+    bool fontLoaded = false;
+    bool initialized = false;
+};
+
+/**
  * Shared dark theme LookAndFeel for the application.
  */
 class DarkLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
     DarkLookAndFeel();
+
+    juce::Font getTextButtonFont(juce::TextButton&, int) override
+    {
+        return AppFont::getFont(14.0f);
+    }
+
+    juce::Font getLabelFont(juce::Label&) override
+    {
+        return AppFont::getFont(14.0f);
+    }
+
+    juce::Font getComboBoxFont(juce::ComboBox&) override
+    {
+        return AppFont::getFont(14.0f);
+    }
+
+    juce::Font getPopupMenuFont() override
+    {
+        return AppFont::getFont(14.0f);
+    }
 
     void drawPopupMenuBackground(juce::Graphics& g, int width, int height) override;
     void drawPopupMenuItem(juce::Graphics& g, const juce::Rectangle<int>& area,
@@ -23,6 +148,10 @@ public:
                      float x, float y, float w, float h,
                      bool ticked, bool isEnabled, bool shouldDrawButtonAsHighlighted,
                      bool shouldDrawButtonAsDown) override;
+
+    void drawProgressBar(juce::Graphics& g, juce::ProgressBar& bar,
+                         int width, int height, double progress,
+                         const juce::String& textToShow) override;
 
     static DarkLookAndFeel& getInstance()
     {

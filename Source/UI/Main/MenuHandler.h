@@ -25,11 +25,11 @@ public:
     std::function<void()> onOpenFile;
     std::function<void()> onSaveProject;
     std::function<void()> onExportFile;
+    std::function<void()> onExportMidi;
     std::function<void()> onUndo;
     std::function<void()> onRedo;
     std::function<void()> onShowSettings;
     std::function<void()> onQuit;
-    std::function<void()> onExportSOMEDebug;
     std::function<void(bool)> onShowDeltaPitchChanged;
     std::function<void(bool)> onShowBasePitchChanged;
 
@@ -44,11 +44,11 @@ private:
         MenuOpen = 1,
         MenuSave,
         MenuExport,
+        MenuExportMidi,
         MenuQuit,
         MenuUndo,
         MenuRedo,
         MenuSettings,
-        MenuExportSOMEDebug,
         MenuShowDeltaPitch,
         MenuShowBasePitch
     };

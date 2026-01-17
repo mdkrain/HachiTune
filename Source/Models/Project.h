@@ -101,11 +101,6 @@ public:
     bool isModified() const { return modified; }
     void setModified(bool mod) { modified = mod; }
 
-    // Persistence
-    bool saveToFile(const juce::File& file) const;
-    std::unique_ptr<juce::XmlElement> toXml() const;
-    bool fromXml(const juce::XmlElement& xml);
-    
 private:
     juce::String name = "Untitled";
     juce::File filePath;

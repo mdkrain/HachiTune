@@ -1,5 +1,7 @@
 #include "PluginProcessor.h"
+#include "../Models/ProjectSerializer.h"
 #include "../UI/MainComponent.h"
+#include "../Utils/Localization.h"
 #include "PluginEditor.h"
 
 PitchEditorAudioProcessor::PitchEditorAudioProcessor()
@@ -199,7 +201,7 @@ void PitchEditorAudioProcessor::finishCapture() {
     double sr = hostSampleRate;
     juce::MessageManager::callAsync([this, trimmed, sr]() {
         if (mainComponent) {
-            mainComponent->getToolbar().setStatusMessage("Analyzing...");
+            mainComponent->getToolbar().setStatusMessage(TR("progress.analyzing"));
             mainComponent->setHostAudio(trimmed, sr);
         }
     });
@@ -233,15 +235,20 @@ juce::AudioProcessorEditor* PitchEditorAudioProcessor::createEditor() {
 
 void PitchEditorAudioProcessor::getStateInformation(juce::MemoryBlock& destData) {
     if (mainComponent && mainComponent->getProject()) {
-        if (auto xml = mainComponent->getProject()->toXml())
-            copyXmlToBinary(*xml, destData);
+        auto json = ProjectSerializer::toJson(*mainComponent->getProject());
+        auto jsonString = juce::JSON::toString(json, false);
+        destData.append(jsonString.toRawUTF8(), jsonString.getNumBytesAsUTF8());
     }
 }
 
 void PitchEditorAudioProcessor::setStateInformation(const void* data, int sizeInBytes) {
-    if (auto xml = getXmlFromBinary(data, sizeInBytes)) {
-        if (mainComponent && mainComponent->getProject())
-            mainComponent->getProject()->fromXml(*xml);
+    if (mainComponent && mainComponent->getProject()) {
+        juce::String jsonString(juce::CharPointer_UTF8(static_cast<const char*>(data)),
+                                static_cast<size_t>(sizeInBytes));
+        auto json = juce::JSON::parse(jsonString);
+        if (json.isObject()) {
+            ProjectSerializer::fromJson(*mainComponent->getProject(), json);
+        }
     }
 }
 

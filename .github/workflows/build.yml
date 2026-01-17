@@ -12,6 +12,7 @@ on:
 env:
   BUILD_TYPE: Release
   ONNXRUNTIME_VERSION: "1.17.3"
+  DIRECTML_VERSION: "1.15.4"
 
 jobs:
   # ===========================================
@@ -80,8 +81,25 @@ jobs:
           Invoke-WebRequest -Uri "https://github.com/mdkrain/HachiTune/releases/download/Resources%2Fmodels/rmvpe.onnx" -OutFile "Resources/models/rmvpe.onnx"
           Invoke-WebRequest -Uri "https://github.com/mdkrain/HachiTune/releases/download/Resources%2Fmodels/some.onnx" -OutFile "Resources/models/some.onnx"
 
+      - name: Download DirectML Runtime
+        shell: pwsh
+        run: |
+          # Download DirectML NuGet package
+          $dmlUrl = "https://www.nuget.org/api/v2/package/Microsoft.AI.DirectML/${{ env.DIRECTML_VERSION }}"
+          Invoke-WebRequest -Uri $dmlUrl -OutFile "directml.nupkg"
+
+          # Extract (nupkg is just a zip)
+          Expand-Archive -Path "directml.nupkg" -DestinationPath "directml_pkg" -Force
+
+          # Create vendor directory and copy DLL
+          New-Item -ItemType Directory -Force -Path "vendor/directml/bin"
+          Copy-Item -Path "directml_pkg/bin/x64-win/DirectML.dll" -Destination "vendor/directml/bin/"
+
+          Write-Host "DirectML ${{ env.DIRECTML_VERSION }} downloaded successfully"
+          Get-ChildItem "vendor/directml/bin/"
+
       - name: Configure CMake
-        run: cmake -B build -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DUSE_DIRECTML=ON
+        run: cmake -B build -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DUSE_DIRECTML=ON -DUSE_BUNDLED_DIRECTML_RUNTIME=ON
 
       - name: Build
         run: cmake --build build --config ${{ env.BUILD_TYPE }} --parallel
@@ -90,13 +108,20 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path package
-          
+
           # Copy standalone app
           Copy-Item -Path "build/PitchEditor_artefacts/${{ env.BUILD_TYPE }}/*" -Destination "package/" -Recurse -Force
-          
+
           # Copy VST3 plugin
           if (Test-Path "build/PitchEditorPlugin_artefacts/${{ env.BUILD_TYPE }}/VST3") {
             Copy-Item -Path "build/PitchEditorPlugin_artefacts/${{ env.BUILD_TYPE }}/VST3" -Destination "package/" -Recurse -Force
+          }
+
+          # Verify DirectML.dll is included
+          if (Test-Path "package/DirectML.dll") {
+            Write-Host "DirectML.dll included in package"
+          } else {
+            Write-Warning "DirectML.dll NOT found in package!"
           }
 
       - name: Upload Artifact

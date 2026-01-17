@@ -1,4 +1,5 @@
 #include "AudioFileManager.h"
+#include "../../Utils/Localization.h"
 
 AudioFileManager::AudioFileManager() = default;
 
@@ -10,7 +11,7 @@ AudioFileManager::~AudioFileManager() {
 
 void AudioFileManager::showOpenDialog(std::function<void(const juce::File&)> onFileSelected) {
     fileChooser = std::make_unique<juce::FileChooser>(
-        "Select an audio file...", juce::File{}, "*.wav;*.mp3;*.flac;*.aiff");
+        TR("dialog.select_audio"), juce::File{}, "*.wav;*.mp3;*.flac;*.aiff");
 
     auto chooserFlags = juce::FileBrowserComponent::openMode |
                         juce::FileBrowserComponent::canSelectFiles;
@@ -24,7 +25,7 @@ void AudioFileManager::showOpenDialog(std::function<void(const juce::File&)> onF
 
 void AudioFileManager::showSaveDialog(const juce::File& defaultPath,
                                       std::function<void(const juce::File&)> onFileSelected) {
-    fileChooser = std::make_unique<juce::FileChooser>("Save project...", defaultPath, "*.peproj");
+    fileChooser = std::make_unique<juce::FileChooser>(TR("dialog.save_project"), defaultPath, "*.htpx");
 
     auto chooserFlags = juce::FileBrowserComponent::saveMode |
                         juce::FileBrowserComponent::canSelectFiles |
@@ -34,7 +35,7 @@ void AudioFileManager::showSaveDialog(const juce::File& defaultPath,
         auto file = fc.getResult();
         if (file != juce::File{} && onFileSelected) {
             auto finalFile = file.getFileExtension().isEmpty()
-                ? file.withFileExtension("peproj")
+                ? file.withFileExtension("htpx")
                 : file;
             onFileSelected(finalFile);
         }
@@ -43,7 +44,7 @@ void AudioFileManager::showSaveDialog(const juce::File& defaultPath,
 
 void AudioFileManager::showExportDialog(const juce::File& defaultPath,
                                         std::function<void(const juce::File&)> onFileSelected) {
-    fileChooser = std::make_unique<juce::FileChooser>("Export audio...", defaultPath, "*.wav");
+    fileChooser = std::make_unique<juce::FileChooser>(TR("dialog.export_audio"), defaultPath, "*.wav");
 
     auto chooserFlags = juce::FileBrowserComponent::saveMode |
                         juce::FileBrowserComponent::canSelectFiles |
@@ -74,7 +75,7 @@ void AudioFileManager::loadAudioFileAsync(const juce::File& file,
 
     loaderThread = std::thread([this, file, onProgress, onComplete]() {
         if (onProgress)
-            onProgress(0.05, "Loading audio...");
+            onProgress(0.05, TR("progress.loading_audio"));
 
         juce::AudioFormatManager formatManager;
         formatManager.registerBasicFormats();
@@ -89,7 +90,7 @@ void AudioFileManager::loadAudioFileAsync(const juce::File& file,
         const int srcSampleRate = static_cast<int>(reader->sampleRate);
 
         if (onProgress)
-            onProgress(0.10, "Reading audio...");
+            onProgress(0.10, TR("progress.reading_audio"));
 
         // Read audio data
         juce::AudioBuffer<float> buffer;
@@ -110,7 +111,7 @@ void AudioFileManager::loadAudioFileAsync(const juce::File& file,
         // Resample if needed
         if (srcSampleRate != SAMPLE_RATE) {
             if (onProgress)
-                onProgress(0.18, "Resampling...");
+                onProgress(0.18, TR("progress.resampling"));
             buffer = resampleIfNeeded(buffer, srcSampleRate, SAMPLE_RATE);
         }
 
@@ -120,7 +121,7 @@ void AudioFileManager::loadAudioFileAsync(const juce::File& file,
         }
 
         if (onProgress)
-            onProgress(0.22, "Audio loaded");
+            onProgress(0.22, TR("progress.audio_loaded"));
 
         isLoadingAudio = false;
 
@@ -138,7 +139,7 @@ void AudioFileManager::exportAudioFileAsync(const juce::File& file,
                                             ProgressCallback onProgress,
                                             ExportCompleteCallback onComplete) {
     if (onProgress)
-        onProgress(0.0, "Exporting...");
+        onProgress(0.0, TR("progress.exporting"));
 
     // Export synchronously for now (could be made async if needed)
     juce::WavAudioFormat wavFormat;
@@ -154,7 +155,7 @@ void AudioFileManager::exportAudioFileAsync(const juce::File& file,
     }
 
     if (onProgress)
-        onProgress(1.0, success ? "Export complete" : "Export failed");
+        onProgress(1.0, success ? TR("progress.export_complete") : TR("progress.export_failed"));
 
     if (onComplete)
         onComplete(success);
@@ -164,7 +165,7 @@ bool AudioFileManager::isInterestedInFileDrag(const juce::StringArray& files) {
     for (const auto& f : files) {
         juce::File file(f);
         auto ext = file.getFileExtension().toLowerCase();
-        if (ext == ".wav" || ext == ".mp3" || ext == ".flac" || ext == ".aiff" || ext == ".peproj")
+        if (ext == ".wav" || ext == ".mp3" || ext == ".flac" || ext == ".aiff" || ext == ".htpx")
             return true;
     }
     return false;
@@ -174,7 +175,7 @@ juce::File AudioFileManager::getFirstAudioFile(const juce::StringArray& files) {
     for (const auto& f : files) {
         juce::File file(f);
         auto ext = file.getFileExtension().toLowerCase();
-        if (ext == ".wav" || ext == ".mp3" || ext == ".flac" || ext == ".aiff" || ext == ".peproj")
+        if (ext == ".wav" || ext == ".mp3" || ext == ".flac" || ext == ".aiff" || ext == ".htpx")
             return file;
     }
     return {};

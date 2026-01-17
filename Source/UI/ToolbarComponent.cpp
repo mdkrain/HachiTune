@@ -87,12 +87,12 @@ ToolbarComponent::ToolbarComponent()
     selectModeButton.setActive(true);
     followButton.setActive(true);  // Follow is on by default
 
-    // Time label with monospace font for stable width
+    // Time label with app font (larger and bold for readability)
     addAndMakeVisible(timeLabel);
     timeLabel.setText("00:00.000 / 00:00.000", juce::dontSendNotification);
     timeLabel.setColour(juce::Label::textColourId, juce::Colour(0xFFCCCCCC));
     timeLabel.setJustificationType(juce::Justification::centred);
-    timeLabel.setFont(juce::FontOptions().withName("Menlo").withHeight(14.0f).withStyle("Bold"));
+    timeLabel.setFont(AppFont::getBoldFont(20.0f));
 
     // Zoom slider
     addAndMakeVisible(zoomLabel);
@@ -119,6 +119,7 @@ ToolbarComponent::ToolbarComponent()
     progressLabel.setJustificationType(juce::Justification::centredLeft);
     progressBar.setColour(juce::ProgressBar::foregroundColourId, juce::Colour(COLOR_PRIMARY));
     progressBar.setColour(juce::ProgressBar::backgroundColourId, juce::Colour(0xFF2D2D37));
+    progressBar.setLookAndFeel(&DarkLookAndFeel::getInstance());
     
     // Status label (hidden by default)
     addChildComponent(statusLabel);
@@ -127,7 +128,10 @@ ToolbarComponent::ToolbarComponent()
     statusLabel.setFont(juce::Font(11.0f));
 }
 
-ToolbarComponent::~ToolbarComponent() = default;
+ToolbarComponent::~ToolbarComponent()
+{
+    progressBar.setLookAndFeel(nullptr);
+}
 
 void ToolbarComponent::paint(juce::Graphics& g)
 {
@@ -422,5 +426,5 @@ void ToolbarComponent::setPluginMode(bool isPlugin)
 void ToolbarComponent::setARAMode(bool isARA)
 {
     araMode = isARA;
-    araModeLabel.setText(isARA ? "ARA Mode" : "Non-ARA", juce::dontSendNotification);
+    araModeLabel.setText(isARA ? TR("toolbar.ara_mode") : TR("toolbar.non_ara"), juce::dontSendNotification);
 }

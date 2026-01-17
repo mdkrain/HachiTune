@@ -116,8 +116,8 @@ SettingsComponent::SettingsComponent(juce::AudioDeviceManager* audioDeviceManage
         outputChannelsLabel.setText(TR("settings.output_channels"), juce::dontSendNotification);
         outputChannelsLabel.setColour(juce::Label::textColourId, juce::Colours::white);
         addAndMakeVisible(outputChannelsLabel);
-        outputChannelsComboBox.addItem("Mono", 1);
-        outputChannelsComboBox.addItem("Stereo", 2);
+        outputChannelsComboBox.addItem(TR("settings.mono"), 1);
+        outputChannelsComboBox.addItem(TR("settings.stereo"), 2);
         outputChannelsComboBox.setSelectedId(2, juce::dontSendNotification);
         outputChannelsComboBox.addListener(this);
         addAndMakeVisible(outputChannelsComboBox);
@@ -264,27 +264,19 @@ void SettingsComponent::comboBoxChanged(juce::ComboBox* comboBox)
         // Update info label
         if (currentDevice == "CPU")
         {
-            infoLabel.setText("CPU: Uses your processor for inference.\n"
-                              "Most compatible, moderate speed.",
-                              juce::dontSendNotification);
+            infoLabel.setText(TR("settings.cpu_desc"), juce::dontSendNotification);
         }
         else if (currentDevice == "CUDA")
         {
-            infoLabel.setText("CUDA: Uses NVIDIA GPU for inference.\n"
-                              "Fastest option if you have an NVIDIA GPU.",
-                              juce::dontSendNotification);
+            infoLabel.setText(TR("settings.cuda_desc"), juce::dontSendNotification);
         }
         else if (currentDevice == "DirectML")
         {
-            infoLabel.setText("DirectML: Uses GPU via DirectX 12.\n"
-                              "Works with most GPUs on Windows.",
-                              juce::dontSendNotification);
+            infoLabel.setText(TR("settings.directml_desc"), juce::dontSendNotification);
         }
         else if (currentDevice == "CoreML")
         {
-            infoLabel.setText("CoreML: Uses Apple Neural Engine or GPU.\n"
-                              "Best option on macOS/iOS devices.",
-                              juce::dontSendNotification);
+            infoLabel.setText(TR("settings.coreml_desc"), juce::dontSendNotification);
         }
 
         if (onSettingsChanged)
@@ -513,7 +505,7 @@ void SettingsComponent::updateGPUDeviceList(const juce::String& deviceType)
     else
     {
         // Other GPU providers (CoreML, TensorRT) - use default device
-        gpuDeviceComboBox.addItem("Default GPU", 1);
+        gpuDeviceComboBox.addItem(TR("settings.default_gpu"), 1);
     }
     
     // Set default selection

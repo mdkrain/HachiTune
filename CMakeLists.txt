@@ -381,28 +381,50 @@ if(ONNXRUNTIME_FOUND)
             set(DML_DLLS "DirectML.dll")
             set(DML_BIN_DIR "")
 
-            set(DML_REDIST_DIR "${CMAKE_SOURCE_DIR}/vendor/directml/bin")
-            if(NOT EXISTS "${DML_REDIST_DIR}")
-                set(DML_REDIST_DIR "${CMAKE_BINARY_DIR}/directml_redist/bin")
+            # DirectML version for auto-download
+            if(NOT DIRECTML_VERSION)
+                set(DIRECTML_VERSION "1.15.4")
             endif()
 
-            # Download redistributable if URL provided and dir not present
-            if(NOT EXISTS "${DML_REDIST_DIR}" AND DIRECTML_REDIST_URL)
-                message(STATUS "Downloading DirectML redistributable from ${DIRECTML_REDIST_URL}")
-                file(DOWNLOAD "${DIRECTML_REDIST_URL}"
-                    "${CMAKE_BINARY_DIR}/directml_redist.zip"
-                    SHOW_PROGRESS)
-                file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/directml_redist")
-                execute_process(COMMAND ${CMAKE_COMMAND} -E tar xzf "${CMAKE_BINARY_DIR}/directml_redist.zip"
-                                WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/directml_redist")
-                if(EXISTS "${CMAKE_BINARY_DIR}/directml_redist/bin")
-                    set(DML_REDIST_DIR "${CMAKE_BINARY_DIR}/directml_redist/bin")
+            # Check for pre-existing DirectML in vendor directory
+            set(DML_REDIST_DIR "${CMAKE_SOURCE_DIR}/vendor/directml/bin")
+
+            # If not found, check/download to build directory
+            if(NOT EXISTS "${DML_REDIST_DIR}/DirectML.dll")
+                set(DML_DOWNLOAD_DIR "${CMAKE_BINARY_DIR}/_deps/directml-src")
+                set(DML_REDIST_DIR "${DML_DOWNLOAD_DIR}/bin/x64-win")
+
+                # Auto-download from NuGet if not present
+                if(NOT EXISTS "${DML_REDIST_DIR}/DirectML.dll")
+                    set(DML_NUGET_URL "https://www.nuget.org/api/v2/package/Microsoft.AI.DirectML/${DIRECTML_VERSION}")
+                    set(DML_NUPKG_PATH "${CMAKE_BINARY_DIR}/_deps/directml.nupkg")
+
+                    message(STATUS "Downloading DirectML ${DIRECTML_VERSION} from NuGet...")
+                    file(DOWNLOAD "${DML_NUGET_URL}" "${DML_NUPKG_PATH}"
+                        SHOW_PROGRESS
+                        STATUS DML_DOWNLOAD_STATUS)
+
+                    list(GET DML_DOWNLOAD_STATUS 0 DML_DOWNLOAD_RESULT)
+                    if(DML_DOWNLOAD_RESULT EQUAL 0)
+                        message(STATUS "Extracting DirectML package...")
+                        file(MAKE_DIRECTORY "${DML_DOWNLOAD_DIR}")
+                        execute_process(
+                            COMMAND ${CMAKE_COMMAND} -E tar xf "${DML_NUPKG_PATH}"
+                            WORKING_DIRECTORY "${DML_DOWNLOAD_DIR}"
+                            RESULT_VARIABLE DML_EXTRACT_RESULT)
+
+                        if(NOT DML_EXTRACT_RESULT EQUAL 0)
+                            message(WARNING "Failed to extract DirectML package")
+                        endif()
+                    else()
+                        message(WARNING "Failed to download DirectML: ${DML_DOWNLOAD_STATUS}")
+                    endif()
                 endif()
             endif()
 
-            if(EXISTS "${DML_REDIST_DIR}")
+            if(EXISTS "${DML_REDIST_DIR}/DirectML.dll")
                 set(DML_BIN_DIR "${DML_REDIST_DIR}")
-                message(STATUS "Using bundled DirectML runtime from: ${DML_BIN_DIR}")
+                message(STATUS "Using bundled DirectML ${DIRECTML_VERSION} from: ${DML_BIN_DIR}")
 
                 foreach(DML_DLL ${DML_DLLS})
                     set(DML_DLL_PATH "${DML_BIN_DIR}/${DML_DLL}")
@@ -420,8 +442,8 @@ if(ONNXRUNTIME_FOUND)
                     endif()
                 endforeach()
             else()
-                message(WARNING "USE_BUNDLED_DIRECTML_RUNTIME is ON but DirectML redistributable not found.")
-                message(WARNING "Set DIRECTML_REDIST_URL or place DirectML.dll in vendor/directml/bin/")
+                message(WARNING "USE_BUNDLED_DIRECTML_RUNTIME is ON but DirectML.dll not found.")
+                message(WARNING "Check network connection or place DirectML.dll in vendor/directml/bin/")
             endif()
         elseif(USE_DIRECTML)
             message(STATUS "DirectML will be loaded from the system (included in Windows 10/11)")
