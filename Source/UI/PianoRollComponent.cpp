@@ -76,9 +76,14 @@ PianoRollComponent::PianoRollComponent() {
 
   // Default view centered on C3-C4 (MIDI 48-60)
   centerOnPitchRange(48.0f, 60.0f);
+
+  // Enable keyboard focus for shortcuts
+  setWantsKeyboardFocus(true);
+  addKeyListener(this);
 }
 
 PianoRollComponent::~PianoRollComponent() {
+  removeKeyListener(this);
   horizontalScrollBar.removeListener(this);
   verticalScrollBar.removeListener(this);
 }
@@ -823,6 +828,9 @@ void PianoRollComponent::mouseDown(const juce::MouseEvent &e) {
   if (!project)
     return;
 
+  // Grab keyboard focus so shortcuts work after mouse operations
+  grabKeyboardFocus();
+
   float adjustedX = e.x - pianoKeysWidth + static_cast<float>(scrollX);
   float adjustedY = e.y - timelineHeight + static_cast<float>(scrollY);
 
@@ -992,6 +1000,9 @@ void PianoRollComponent::mouseDrag(const juce::MouseEvent &e) {
 
 void PianoRollComponent::mouseUp(const juce::MouseEvent &e) {
   juce::ignoreUnused(e);
+
+  // Ensure keyboard focus is maintained after mouse operations
+  grabKeyboardFocus();
 
   if (editMode == EditMode::Draw && isDrawing) {
     isDrawing = false;
@@ -1392,6 +1403,46 @@ void PianoRollComponent::setUndoManager(PitchUndoManager *manager) {
   noteSplitter->setUndoManager(manager);
 }
 
+bool PianoRollComponent::keyPressed(const juce::KeyPress& key, juce::Component*) {
+  // Ctrl+Z or Cmd+Z: Undo
+  if (key == juce::KeyPress('z', juce::ModifierKeys::ctrlModifier, 0) ||
+      key == juce::KeyPress('z', juce::ModifierKeys::commandModifier, 0)) {
+    if (onUndo) {
+      onUndo();
+      return true;
+    }
+  }
+
+  // Ctrl+Y or Ctrl+Shift+Z or Cmd+Shift+Z: Redo
+  if (key == juce::KeyPress('y', juce::ModifierKeys::ctrlModifier, 0) ||
+      key == juce::KeyPress('z', juce::ModifierKeys::ctrlModifier | juce::ModifierKeys::shiftModifier, 0) ||
+      key == juce::KeyPress('z', juce::ModifierKeys::commandModifier | juce::ModifierKeys::shiftModifier, 0)) {
+    if (onRedo) {
+      onRedo();
+      return true;
+    }
+  }
+
+  // Space: Play/Pause
+  if (key == juce::KeyPress::spaceKey) {
+    if (onPlayPause) {
+      onPlayPause();
+      return true;
+    }
+  }
+
+  // D: Toggle draw mode
+  if (key == juce::KeyPress('d') || key == juce::KeyPress('D')) {
+    if (editMode == EditMode::Draw)
+      setEditMode(EditMode::Select);
+    else
+      setEditMode(EditMode::Draw);
+    return true;
+  }
+
+  return false;
+}
+
 void PianoRollComponent::setCursorTime(double time) {
   if (std::abs(cursorTime - time) < 0.0001)
     return; // Skip if no change
@@ -1732,6 +1783,38 @@ void PianoRollComponent::commitPitchDrawing() {
   // Trigger synthesis
   if (onPitchEditFinished)
     onPitchEditFinished();
+}
+
+void PianoRollComponent::cancelDrawing() {
+  if (!isDrawing)
+    return;
+
+  // Restore original F0 values from drawing edits
+  if (project && !drawingEdits.empty()) {
+    auto &audioData = project->getAudioData();
+    for (const auto &e : drawingEdits) {
+      if (e.idx >= 0 && e.idx < static_cast<int>(audioData.f0.size())) {
+        audioData.f0[e.idx] = e.oldF0;
+      }
+      if (e.idx >= 0 && e.idx < static_cast<int>(audioData.deltaPitch.size())) {
+        audioData.deltaPitch[e.idx] = e.oldDelta;
+      }
+      if (e.idx >= 0 && e.idx < static_cast<int>(audioData.voicedMask.size())) {
+        audioData.voicedMask[e.idx] = e.oldVoiced;
+      }
+    }
+  }
+
+  // Clear drawing state
+  isDrawing = false;
+  drawingEdits.clear();
+  drawingEditIndexByFrame.clear();
+  lastDrawFrame = -1;
+  lastDrawValueCents = 0;
+  activeDrawCurve = nullptr;
+  drawCurves.clear();
+
+  repaint();
 }
 
 void PianoRollComponent::applyPitchPoint(int frameIndex, int midiCents) {

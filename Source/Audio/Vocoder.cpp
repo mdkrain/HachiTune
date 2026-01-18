@@ -233,7 +233,10 @@ std::vector<float> Vocoder::infer(const std::vector<std::vector<float>>& mel,
 {
     if (!loaded || mel.empty() || f0.empty())
         return {};
-    
+
+    // Lock to ensure thread-safe access to ONNX session
+    std::lock_guard<std::mutex> lock(inferenceMutex);
+
     size_t numFrames = std::min(mel.size(), f0.size());
     
     log("Starting inference with " + std::to_string(numFrames) + " frames");
@@ -330,7 +333,32 @@ std::vector<float> Vocoder::infer(const std::vector<std::vector<float>>& mel,
         
         // Run inference
         auto startInfer = std::chrono::high_resolution_clock::now();
-        
+
+        // Validate session and names before inference
+        if (!onnxSession || inputNames.empty() || outputNames.empty())
+        {
+            log("ONNX session or input/output names invalid before inference");
+            return generateSineFallback(f0);
+        }
+
+        // Validate all name pointers are non-null
+        for (const auto* name : inputNames)
+        {
+            if (name == nullptr)
+            {
+                log("Null pointer found in inputNames");
+                return generateSineFallback(f0);
+            }
+        }
+        for (const auto* name : outputNames)
+        {
+            if (name == nullptr)
+            {
+                log("Null pointer found in outputNames");
+                return generateSineFallback(f0);
+            }
+        }
+
         auto outputTensors = onnxSession->Run(
             Ort::RunOptions{nullptr},
             inputNames.data(), inputTensors.data(), inputTensors.size(),
@@ -528,7 +556,10 @@ bool Vocoder::reloadModel()
         log("Cannot reload: no model file set");
         return false;
     }
-    
+
+    // Lock to prevent reload during inference
+    std::lock_guard<std::mutex> lock(inferenceMutex);
+
     log("Reloading model with new settings...");
     
 #ifdef HAVE_ONNXRUNTIME

@@ -108,6 +108,9 @@ private:
     std::mutex asyncMutex;
     std::condition_variable asyncCondition;
 
+    // Mutex to protect ONNX session access during inference
+    mutable std::mutex inferenceMutex;
+
     void log(const std::string& message);
 
 #ifdef HAVE_ONNXRUNTIME

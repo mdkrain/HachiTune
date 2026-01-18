@@ -217,6 +217,14 @@ MainComponent::MainComponent(bool enableAudioDevice)
       onPitchEditFinished();
   };
   pianoRoll.onZoomChanged = [this](float pps) { onZoomChanged(pps); };
+  pianoRoll.onUndo = [this]() { undo(); };
+  pianoRoll.onRedo = [this]() { redo(); };
+  pianoRoll.onPlayPause = [this]() {
+    if (isPlaying)
+      pause();
+    else
+      play();
+  };
 
   // Setup parameter panel callbacks
   parameterPanel.onParameterChanged = [this]() { onPitchEdited(); };
@@ -638,6 +646,10 @@ void MainComponent::loadAudioFile(const juce::File &file) {
     juce::MessageManager::callAsync([safeThis, newProject]() mutable {
       if (safeThis == nullptr)
         return;
+
+      // Clear undo history before replacing project to avoid dangling pointers
+      if (safeThis->undoManager)
+        safeThis->undoManager->clear();
 
       safeThis->project = std::make_unique<Project>(std::move(*newProject));
 
@@ -1306,6 +1318,9 @@ void MainComponent::onZoomChanged(float pixelsPerSecond) {
 }
 
 void MainComponent::undo() {
+  // Cancel any in-progress drawing first
+  pianoRoll.cancelDrawing();
+
   if (undoManager && undoManager->canUndo()) {
     undoManager->undo();
     pianoRoll.repaint();
@@ -1661,6 +1676,10 @@ void MainComponent::setHostAudio(const juce::AudioBuffer<float> &buffer,
     juce::MessageManager::callAsync([safeThis, projectCopy]() mutable {
       if (safeThis == nullptr)
         return;
+
+      // Clear undo history before replacing project to avoid dangling pointers
+      if (safeThis->undoManager)
+        safeThis->undoManager->clear();
 
       safeThis->project = std::make_unique<Project>(std::move(*projectCopy));
 

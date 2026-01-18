@@ -32,12 +32,13 @@ enum class EditMode
  * Piano roll component for displaying and editing notes.
  */
 class PianoRollComponent : public juce::Component,
-                            public juce::ScrollBar::Listener
+                            public juce::ScrollBar::Listener,
+                            public juce::KeyListener
 {
 public:
     PianoRollComponent();
     ~PianoRollComponent() override;
-    
+
     void paint(juce::Graphics& g) override;
     void resized() override;
     void mouseDown(const juce::MouseEvent& e) override;
@@ -47,7 +48,10 @@ public:
     void mouseDoubleClick(const juce::MouseEvent& e) override;
     void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override;
     void mouseMagnify(const juce::MouseEvent& e, float scaleFactor) override;
-    
+
+    // KeyListener
+    bool keyPressed(const juce::KeyPress& key, juce::Component* originatingComponent) override;
+
     // ScrollBar::Listener
     void scrollBarMoved(juce::ScrollBar* scrollBar, double newRangeStart) override;
     
@@ -78,6 +82,9 @@ public:
     void setEditMode(EditMode mode);
     EditMode getEditMode() const { return editMode; }
 
+    // Cancel current drawing operation (used when undo is triggered during drawing)
+    void cancelDrawing();
+
     // View settings
     void setShowDeltaPitch(bool show) { showDeltaPitch = show; repaint(); }
     void setShowBasePitch(bool show) { showBasePitch = show; repaint(); }
@@ -92,6 +99,9 @@ public:
     std::function<void(float)> onZoomChanged;
     std::function<void(double)> onScrollChanged;
     std::function<void(int, int)> onReinterpolateUV;  // Called to re-infer UV regions (startFrame, endFrame)
+    std::function<void()> onUndo;  // Called when Ctrl+Z is pressed
+    std::function<void()> onRedo;  // Called when Ctrl+Y/Ctrl+Shift+Z is pressed
+    std::function<void()> onPlayPause;  // Called when Space is pressed
     
 private:
     void drawBackgroundWaveform(juce::Graphics& g, const juce::Rectangle<int>& visibleArea);
