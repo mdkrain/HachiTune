@@ -78,6 +78,13 @@ juce::MidiFile MidiExporter::createMidiFile(const std::vector<Note>& notes,
     // Update matched note on/off pairs
     track.updateMatchedPairs();
 
+    // Add End of Track meta event (required by MIDI spec)
+    // Must be placed after the last event
+    double lastEventTime = track.getEndTime();
+    auto endOfTrack = juce::MidiMessage::endOfTrack();
+    endOfTrack.setTimeStamp(lastEventTime);
+    track.addEvent(endOfTrack);
+
     // Add track to file
     midiFile.addTrack(track);
 
