@@ -33,6 +33,7 @@ PitchEditorAudioProcessorEditor::PitchEditorAudioProcessorEditor(PitchEditorAudi
 
 PitchEditorAudioProcessorEditor::~PitchEditorAudioProcessorEditor() {
     audioProcessor.setMainComponent(nullptr);
+    AppFont::shutdown();  // Release font resources (reference counted)
 }
 
 void PitchEditorAudioProcessorEditor::setupARAMode() {

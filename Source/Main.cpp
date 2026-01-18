@@ -36,7 +36,10 @@ public:
     LOG("MainWindow created and visible");
   }
 
-  void shutdown() override { mainWindow = nullptr; }
+  void shutdown() override {
+    mainWindow = nullptr;
+    AppFont::shutdown();  // Release font resources before JUCE shuts down
+  }
 
   void systemRequestedQuit() override { quit(); }
 

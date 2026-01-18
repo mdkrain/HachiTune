@@ -7,6 +7,7 @@
 /**
  * Global font manager - loads custom font from Resources/fonts/
  * Falls back to system font if not found.
+ * Uses reference counting to support multiple plugin instances.
  */
 class AppFont
 {
@@ -14,6 +15,8 @@ public:
     static void initialize()
     {
         auto& instance = getInstance();
+        ++instance.refCount;
+
         if (instance.initialized)
             return;
 
@@ -55,6 +58,25 @@ public:
         if (!instance.fontLoaded)
         {
             DBG("Custom font not found, using system font");
+        }
+    }
+
+    /**
+     * Release font resources. Call this before application/plugin shutdown
+     * to avoid JUCE leak detector warnings.
+     * Uses reference counting - only releases when last user calls shutdown.
+     */
+    static void shutdown()
+    {
+        auto& instance = getInstance();
+        if (instance.refCount > 0)
+            --instance.refCount;
+
+        if (instance.refCount == 0 && instance.initialized)
+        {
+            instance.customTypeface = nullptr;
+            instance.fontLoaded = false;
+            instance.initialized = false;
         }
     }
 
@@ -107,6 +129,7 @@ private:
     juce::Typeface::Ptr customTypeface;
     bool fontLoaded = false;
     bool initialized = false;
+    int refCount = 0;
 };
 
 /**

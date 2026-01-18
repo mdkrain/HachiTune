@@ -595,6 +595,31 @@ if(LANG_FILES)
     endif()
 endif()
 
+# Copy font files
+set(FONTS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Resources/fonts")
+file(GLOB FONT_FILES "${FONTS_DIR}/*.otf" "${FONTS_DIR}/*.ttf")
+if(FONT_FILES)
+    message(STATUS "Found font files: ${FONT_FILES}")
+    if(APPLE)
+        add_custom_command(TARGET PitchEditor POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_BUNDLE_DIR:PitchEditor>/Contents/Resources/fonts"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${FONT_FILES} "$<TARGET_BUNDLE_DIR:PitchEditor>/Contents/Resources/fonts/")
+        add_custom_command(TARGET PitchEditorPlugin_VST3 POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_BUNDLE_DIR:PitchEditorPlugin_VST3>/Contents/Resources/fonts"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${FONT_FILES} "$<TARGET_BUNDLE_DIR:PitchEditorPlugin_VST3>/Contents/Resources/fonts/")
+        add_custom_command(TARGET PitchEditorPlugin_AU POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_BUNDLE_DIR:PitchEditorPlugin_AU>/Contents/Resources/fonts"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${FONT_FILES} "$<TARGET_BUNDLE_DIR:PitchEditorPlugin_AU>/Contents/Resources/fonts/")
+    else()
+        add_custom_command(TARGET PitchEditor POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:PitchEditor>/fonts"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${FONT_FILES} "$<TARGET_FILE_DIR:PitchEditor>/fonts/")
+        add_custom_command(TARGET PitchEditorPlugin_VST3 POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:PitchEditorPlugin_VST3>/fonts"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${FONT_FILES} "$<TARGET_FILE_DIR:PitchEditorPlugin_VST3>/fonts/")
+    endif()
+endif()
+
 # Re-sign bundles on macOS after all resources are copied
 if(APPLE)
     add_custom_command(TARGET PitchEditor POST_BUILD
