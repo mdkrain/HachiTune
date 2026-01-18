@@ -1340,6 +1340,7 @@ void MainComponent::undo() {
 
   if (undoManager && undoManager->canUndo()) {
     undoManager->undo();
+    pianoRoll.invalidateBasePitchCache();  // 确保 note split 等操作后刷新缓存
     pianoRoll.repaint();
 
     if (project) {
@@ -1354,6 +1355,7 @@ void MainComponent::undo() {
 void MainComponent::redo() {
   if (undoManager && undoManager->canRedo()) {
     undoManager->redo();
+    pianoRoll.invalidateBasePitchCache();  // 确保 note split 等操作后刷新缓存
     pianoRoll.repaint();
 
     if (project) {

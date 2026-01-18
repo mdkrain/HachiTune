@@ -53,14 +53,11 @@ bool NoteSplitter::splitNoteAtFrame(Note* note, int splitFrame) {
     // Add the second note to project
     project->addNote(secondNote);
 
-    // Create undo action
+    // Create undo action - 不传递回调，避免捕获 this 导致生命周期问题
+    // UI 刷新由 UndoManager 的 onUndoRedo 回调统一处理
     if (undoManager) {
         auto action = std::make_unique<NoteSplitAction>(
-            project, originalNote, *note, secondNote,
-            [this]() {
-                if (onNoteSplit)
-                    onNoteSplit();
-            });
+            project, originalNote, *note, secondNote, nullptr);
         undoManager->addAction(std::move(action));
     }
 
