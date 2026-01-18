@@ -17,7 +17,12 @@ public:
     ~PianoRollRenderer() = default;
 
     void setCoordinateMapper(CoordinateMapper* mapper) { coordMapper = mapper; }
-    void setProject(Project* proj) { project = proj; }
+    void setProject(Project* proj) {
+        project = proj;
+        // Clear caches when project changes to free memory
+        invalidateWaveformCache();
+        invalidateBasePitchCache();
+    }
 
     // Main drawing methods
     void drawBackgroundWaveform(juce::Graphics& g, const juce::Rectangle<int>& area);

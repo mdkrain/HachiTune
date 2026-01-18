@@ -3,6 +3,7 @@
 PianoRollRenderer::PianoRollRenderer() = default;
 
 void PianoRollRenderer::invalidateWaveformCache() {
+    waveformCache = juce::Image();  // Release image memory
     cachedScrollX = -1.0;
     cachedPixelsPerSecond = -1.0f;
     cachedWidth = 0;
@@ -13,6 +14,7 @@ void PianoRollRenderer::invalidateBasePitchCache() {
     cacheInvalidated = true;
     cachedNoteCount = 0;
     cachedBasePitch.clear();
+    cachedBasePitch.shrink_to_fit();  // Release memory
 }
 
 float PianoRollRenderer::catmullRom(float t, float p0, float p1, float p2, float p3) {

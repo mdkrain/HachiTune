@@ -6,13 +6,13 @@
 #if JucePlugin_Enable_ARA
 
 class MainComponent;
-class PitchEditorDocumentController;
+class HachiTuneDocumentController;
 
 /**
  * ARA Playback Renderer
  * Reads audio from ARA sources and applies pitch correction
  */
-class PitchEditorPlaybackRenderer : public juce::ARAPlaybackRenderer {
+class HachiTunePlaybackRenderer : public juce::ARAPlaybackRenderer {
 public:
     using ARAPlaybackRenderer::ARAPlaybackRenderer;
 
@@ -27,7 +27,7 @@ public:
 private:
     bool readFromARARegions(juce::AudioBuffer<float>& buffer,
                             juce::int64 timeInSamples, int numSamples);
-    PitchEditorDocumentController* getDocController() const;
+    HachiTuneDocumentController* getDocController() const;
 
     std::map<juce::ARAAudioSource*, std::unique_ptr<juce::ARAAudioSourceReader>> readers;
     std::unique_ptr<juce::AudioBuffer<float>> tempBuffer;
@@ -39,7 +39,7 @@ private:
  * ARA Document Controller
  * Manages ARA document lifecycle and audio source analysis
  */
-class PitchEditorDocumentController : public juce::ARADocumentControllerSpecialisation {
+class HachiTuneDocumentController : public juce::ARADocumentControllerSpecialisation {
 public:
     using ARADocumentControllerSpecialisation::ARADocumentControllerSpecialisation;
 

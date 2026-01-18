@@ -201,7 +201,12 @@ private:
     bool cacheInvalidated = true;  // Start invalidated, force first calculation
 
 public:
-    void invalidateBasePitchCache() { cacheInvalidated = true; cachedNoteCount = 0; cachedBasePitch.clear(); }
+    void invalidateBasePitchCache() {
+        cacheInvalidated = true;
+        cachedNoteCount = 0;
+        cachedBasePitch.clear();
+        cachedBasePitch.shrink_to_fit();  // Release memory
+    }
 
 private:
     // Optional: disable base pitch rendering for performance testing

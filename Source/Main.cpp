@@ -14,9 +14,9 @@
 #pragma comment(lib, "dwmapi.lib")
 #endif
 
-class PitchEditorApplication : public juce::JUCEApplication {
+class HachiTuneApplication : public juce::JUCEApplication {
 public:
-  PitchEditorApplication() {}
+  HachiTuneApplication() {}
 
   const juce::String getApplicationName() override { return "HachiTune"; }
 
@@ -119,4 +119,4 @@ private:
   std::unique_ptr<MainWindow> mainWindow;
 };
 
-START_JUCE_APPLICATION(PitchEditorApplication)
+START_JUCE_APPLICATION(HachiTuneApplication)

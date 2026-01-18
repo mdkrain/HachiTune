@@ -343,15 +343,16 @@ public:
     {
         // Clear redo stack when new action is added
         redoStack.clear();
-        
+        redoStack.shrink_to_fit();  // Release memory
+
         undoStack.push_back(std::move(action));
-        
+
         // Limit history size
         while (undoStack.size() > maxHistory)
         {
             undoStack.erase(undoStack.begin());
         }
-        
+
         if (onHistoryChanged)
             onHistoryChanged();
     }
@@ -390,8 +391,10 @@ public:
     void clear()
     {
         undoStack.clear();
+        undoStack.shrink_to_fit();  // Release memory
         redoStack.clear();
-        
+        redoStack.shrink_to_fit();  // Release memory
+
         if (onHistoryChanged)
             onHistoryChanged();
     }

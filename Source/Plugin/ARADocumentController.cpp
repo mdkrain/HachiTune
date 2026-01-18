@@ -6,16 +6,16 @@
 #include "../UI/MainComponent.h"
 
 //==============================================================================
-// PitchEditorPlaybackRenderer
+// HachiTunePlaybackRenderer
 //==============================================================================
 
-PitchEditorDocumentController* PitchEditorPlaybackRenderer::getDocController() const {
+HachiTuneDocumentController* HachiTunePlaybackRenderer::getDocController() const {
     auto* docController = getDocumentController();
     return juce::ARADocumentControllerSpecialisation::
-        getSpecialisedDocumentController<PitchEditorDocumentController>(docController);
+        getSpecialisedDocumentController<HachiTuneDocumentController>(docController);
 }
 
-void PitchEditorPlaybackRenderer::prepareToPlay(double sampleRateIn, int maxBlockSize,
+void HachiTunePlaybackRenderer::prepareToPlay(double sampleRateIn, int maxBlockSize,
                                                  int numChannelsIn,
                                                  juce::AudioProcessor::ProcessingPrecision,
                                                  AlwaysNonRealtime alwaysNonRealtime) {
@@ -34,12 +34,12 @@ void PitchEditorPlaybackRenderer::prepareToPlay(double sampleRateIn, int maxBloc
     }
 }
 
-void PitchEditorPlaybackRenderer::releaseResources() {
+void HachiTunePlaybackRenderer::releaseResources() {
     readers.clear();
     tempBuffer.reset();
 }
 
-bool PitchEditorPlaybackRenderer::readFromARARegions(juce::AudioBuffer<float>& buffer,
+bool HachiTunePlaybackRenderer::readFromARARegions(juce::AudioBuffer<float>& buffer,
                                                       juce::int64 timeInSamples,
                                                       int numSamples) {
     bool didRender = false;
@@ -96,7 +96,7 @@ bool PitchEditorPlaybackRenderer::readFromARARegions(juce::AudioBuffer<float>& b
     return didRender;
 }
 
-bool PitchEditorPlaybackRenderer::processBlock(juce::AudioBuffer<float>& buffer,
+bool HachiTunePlaybackRenderer::processBlock(juce::AudioBuffer<float>& buffer,
                                                 juce::AudioProcessor::Realtime,
                                                 const juce::AudioPlayHead::PositionInfo& posInfo) noexcept {
     auto timeInSamples = posInfo.getTimeInSamples().orFallback(0);
@@ -143,10 +143,10 @@ bool PitchEditorPlaybackRenderer::processBlock(juce::AudioBuffer<float>& buffer,
 }
 
 //==============================================================================
-// PitchEditorDocumentController
+// HachiTuneDocumentController
 //==============================================================================
 
-void PitchEditorDocumentController::processAudioSource(juce::ARAAudioSource* source) {
+void HachiTuneDocumentController::processAudioSource(juce::ARAAudioSource* source) {
     if (!mainComponent || !source)
         return;
 
@@ -167,23 +167,23 @@ void PitchEditorDocumentController::processAudioSource(juce::ARAAudioSource* sou
     mainComponent->setHostAudio(buffer, sourceSampleRate);
 }
 
-void PitchEditorDocumentController::didAddAudioSourceToDocument(juce::ARADocument*,
+void HachiTuneDocumentController::didAddAudioSourceToDocument(juce::ARADocument*,
                                                                  juce::ARAAudioSource* audioSource) {
     currentAudioSource = audioSource;
     processAudioSource(audioSource);
 }
 
-void PitchEditorDocumentController::reanalyze() {
+void HachiTuneDocumentController::reanalyze() {
     if (currentAudioSource)
         processAudioSource(currentAudioSource);
 }
 
-juce::ARAPlaybackRenderer* PitchEditorDocumentController::doCreatePlaybackRenderer() noexcept {
-    return new PitchEditorPlaybackRenderer(
+juce::ARAPlaybackRenderer* HachiTuneDocumentController::doCreatePlaybackRenderer() noexcept {
+    return new HachiTunePlaybackRenderer(
         ARADocumentControllerSpecialisation::getDocumentController());
 }
 
-bool PitchEditorDocumentController::doRestoreObjectsFromStream(juce::ARAInputStream& input,
+bool HachiTuneDocumentController::doRestoreObjectsFromStream(juce::ARAInputStream& input,
                                                                 const juce::ARARestoreObjectsFilter*) noexcept {
     auto dataSize = input.readInt64();
     if (dataSize <= 0)
@@ -205,7 +205,7 @@ bool PitchEditorDocumentController::doRestoreObjectsFromStream(juce::ARAInputStr
     return !input.failed();
 }
 
-bool PitchEditorDocumentController::doStoreObjectsToStream(juce::ARAOutputStream& output,
+bool HachiTuneDocumentController::doStoreObjectsToStream(juce::ARAOutputStream& output,
                                                             const juce::ARAStoreObjectsFilter*) noexcept {
     if (!mainComponent || !mainComponent->getProject()) {
         output.writeInt64(0);

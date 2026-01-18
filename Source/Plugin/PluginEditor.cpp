@@ -6,7 +6,7 @@
 #include "ARADocumentController.h"
 #endif
 
-PitchEditorAudioProcessorEditor::PitchEditorAudioProcessorEditor(PitchEditorAudioProcessor& p)
+HachiTuneAudioProcessorEditor::HachiTuneAudioProcessorEditor(HachiTuneAudioProcessor& p)
     : AudioProcessorEditor(&p)
     , audioProcessor(p)
 #if JucePlugin_Enable_ARA
@@ -31,12 +31,12 @@ PitchEditorAudioProcessorEditor::PitchEditorAudioProcessorEditor(PitchEditorAudi
     setResizable(true, true);
 }
 
-PitchEditorAudioProcessorEditor::~PitchEditorAudioProcessorEditor() {
+HachiTuneAudioProcessorEditor::~HachiTuneAudioProcessorEditor() {
     audioProcessor.setMainComponent(nullptr);
     AppFont::shutdown();  // Release font resources (reference counted)
 }
 
-void PitchEditorAudioProcessorEditor::setupARAMode() {
+void HachiTuneAudioProcessorEditor::setupARAMode() {
 #if JucePlugin_Enable_ARA
     mainComponent.getToolbar().setARAMode(true);
 
@@ -53,7 +53,7 @@ void PitchEditorAudioProcessorEditor::setupARAMode() {
     }
 
     auto* pitchDocController = juce::ARADocumentControllerSpecialisation::
-        getSpecialisedDocumentController<PitchEditorDocumentController>(docController);
+        getSpecialisedDocumentController<HachiTuneDocumentController>(docController);
 
     if (!pitchDocController) {
         setupNonARAMode();
@@ -94,11 +94,11 @@ void PitchEditorAudioProcessorEditor::setupARAMode() {
 #endif
 }
 
-void PitchEditorAudioProcessorEditor::setupNonARAMode() {
+void HachiTuneAudioProcessorEditor::setupNonARAMode() {
     mainComponent.getToolbar().setARAMode(false);
 }
 
-void PitchEditorAudioProcessorEditor::setupCallbacks() {
+void HachiTuneAudioProcessorEditor::setupCallbacks() {
     // When project data changes (analysis complete or synthesis complete)
     mainComponent.onProjectDataChanged = [this]() {
         if (mainComponent.getVocoder())
@@ -114,10 +114,10 @@ void PitchEditorAudioProcessorEditor::setupCallbacks() {
     // No need for separate callback here
 }
 
-void PitchEditorAudioProcessorEditor::paint(juce::Graphics&) {
+void HachiTuneAudioProcessorEditor::paint(juce::Graphics&) {
     // MainComponent handles all painting
 }
 
-void PitchEditorAudioProcessorEditor::resized() {
+void HachiTuneAudioProcessorEditor::resized() {
     mainComponent.setBounds(getLocalBounds());
 }

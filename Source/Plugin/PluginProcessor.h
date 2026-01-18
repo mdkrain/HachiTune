@@ -14,14 +14,14 @@ class MainComponent;
  * 1. ARA Mode: Direct audio access via ARA protocol (Studio One, Cubase, Logic, etc.)
  * 2. Non-ARA Mode: Auto-capture and process (FL Studio, Ableton, etc.)
  */
-class PitchEditorAudioProcessor : public juce::AudioProcessor
+class HachiTuneAudioProcessor : public juce::AudioProcessor
 #if JucePlugin_Enable_ARA
     , public juce::AudioProcessorARAExtension
 #endif
 {
 public:
-    PitchEditorAudioProcessor();
-    ~PitchEditorAudioProcessor() override;
+    HachiTuneAudioProcessor();
+    ~HachiTuneAudioProcessor() override;
 
     // AudioProcessor interface
     void prepareToPlay(double sampleRate, int samplesPerBlock) override;
@@ -88,5 +88,5 @@ private:
     static constexpr int MAX_CAPTURE_SECONDS = 300; // 5 minutes max
     static constexpr float AUDIO_THRESHOLD = 0.001f; // -60dB
 
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PitchEditorAudioProcessor)
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(HachiTuneAudioProcessor)
 };

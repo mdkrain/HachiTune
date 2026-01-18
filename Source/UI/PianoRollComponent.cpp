@@ -1407,7 +1407,14 @@ void PianoRollComponent::setProject(Project *proj) {
   pitchEditor->setProject(proj);
   noteSplitter->setProject(proj);
 
-  invalidateBasePitchCache(); // Clear cache when project changes
+  // Clear all caches when project changes to free memory
+  invalidateBasePitchCache();
+  waveformCache = juce::Image();  // Clear waveform cache
+  cachedScrollX = -1.0;
+  cachedPixelsPerSecond = -1.0f;
+  cachedWidth = 0;
+  cachedHeight = 0;
+
   updateScrollBars();
   repaint();
 }

@@ -25,7 +25,7 @@ Vocoder::Vocoder()
 #ifdef HAVE_ONNXRUNTIME
     // Initialize ONNX Runtime environment
     try {
-        onnxEnv = std::make_unique<Ort::Env>(ORT_LOGGING_LEVEL_WARNING, "PitchEditor");
+        onnxEnv = std::make_unique<Ort::Env>(ORT_LOGGING_LEVEL_WARNING, "HachiTune");
         allocator = std::make_unique<Ort::AllocatorWithDefaultOptions>();
         log("ONNX Runtime initialized successfully");
     } catch (const Ort::Exception& e) {

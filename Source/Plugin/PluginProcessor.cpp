@@ -4,7 +4,7 @@
 #include "../Utils/Localization.h"
 #include "PluginEditor.h"
 
-PitchEditorAudioProcessor::PitchEditorAudioProcessor()
+HachiTuneAudioProcessor::HachiTuneAudioProcessor()
 #ifndef JucePlugin_PreferredChannelConfigurations
     : AudioProcessor(BusesProperties()
           .withInput("Input", juce::AudioChannelSet::stereo(), true)
@@ -13,13 +13,13 @@ PitchEditorAudioProcessor::PitchEditorAudioProcessor()
 {
 }
 
-PitchEditorAudioProcessor::~PitchEditorAudioProcessor() = default;
+HachiTuneAudioProcessor::~HachiTuneAudioProcessor() = default;
 
-const juce::String PitchEditorAudioProcessor::getName() const {
+const juce::String HachiTuneAudioProcessor::getName() const {
     return JucePlugin_Name;
 }
 
-bool PitchEditorAudioProcessor::acceptsMidi() const {
+bool HachiTuneAudioProcessor::acceptsMidi() const {
 #if JucePlugin_WantsMidiInput
     return true;
 #else
@@ -27,7 +27,7 @@ bool PitchEditorAudioProcessor::acceptsMidi() const {
 #endif
 }
 
-bool PitchEditorAudioProcessor::producesMidi() const {
+bool HachiTuneAudioProcessor::producesMidi() const {
 #if JucePlugin_ProducesMidiOutput
     return true;
 #else
@@ -35,7 +35,7 @@ bool PitchEditorAudioProcessor::producesMidi() const {
 #endif
 }
 
-bool PitchEditorAudioProcessor::isMidiEffect() const {
+bool HachiTuneAudioProcessor::isMidiEffect() const {
 #if JucePlugin_IsMidiEffect
     return true;
 #else
@@ -43,7 +43,7 @@ bool PitchEditorAudioProcessor::isMidiEffect() const {
 #endif
 }
 
-void PitchEditorAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
+void HachiTuneAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
     hostSampleRate = sampleRate;
     realtimeProcessor.prepareToPlay(sampleRate, samplesPerBlock);
 
@@ -60,14 +60,14 @@ void PitchEditorAudioProcessor::prepareToPlay(double sampleRate, int samplesPerB
     captureState = CaptureState::WaitingForAudio;
 }
 
-void PitchEditorAudioProcessor::releaseResources() {
+void HachiTuneAudioProcessor::releaseResources() {
 #if JucePlugin_Enable_ARA
     releaseResourcesForARA();
 #endif
 }
 
 #if !JucePlugin_PreferredChannelConfigurations
-bool PitchEditorAudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const {
+bool HachiTuneAudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const {
     if (layouts.getMainOutputChannelSet() != layouts.getMainInputChannelSet())
         return false;
     auto out = layouts.getMainOutputChannelSet();
@@ -75,7 +75,7 @@ bool PitchEditorAudioProcessor::isBusesLayoutSupported(const BusesLayout& layout
 }
 #endif
 
-bool PitchEditorAudioProcessor::isARAModeActive() const {
+bool HachiTuneAudioProcessor::isARAModeActive() const {
 #if JucePlugin_Enable_ARA
     if (auto* editor = getActiveEditor()) {
         if (auto* araEditor = dynamic_cast<juce::AudioProcessorEditorARAExtension*>(editor)) {
@@ -88,11 +88,11 @@ bool PitchEditorAudioProcessor::isARAModeActive() const {
     return false;
 }
 
-HostCompatibility::HostInfo PitchEditorAudioProcessor::getHostInfo() const {
-    return HostCompatibility::detectHost(const_cast<PitchEditorAudioProcessor*>(this));
+HostCompatibility::HostInfo HachiTuneAudioProcessor::getHostInfo() const {
+    return HostCompatibility::detectHost(const_cast<HachiTuneAudioProcessor*>(this));
 }
 
-juce::String PitchEditorAudioProcessor::getHostStatusMessage() const {
+juce::String HachiTuneAudioProcessor::getHostStatusMessage() const {
     auto hostInfo = getHostInfo();
     bool araActive = isARAModeActive();
 
@@ -106,7 +106,7 @@ juce::String PitchEditorAudioProcessor::getHostStatusMessage() const {
     return araActive ? "ARA Mode" : "Non-ARA Mode";
 }
 
-void PitchEditorAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
+void HachiTuneAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
                                               juce::MidiBuffer& midiMessages) {
     juce::ignoreUnused(midiMessages);
     juce::ScopedNoDenormals noDenormals;
@@ -127,7 +127,7 @@ void PitchEditorAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     processNonARAMode(buffer, posInfo);
 }
 
-void PitchEditorAudioProcessor::processNonARAMode(juce::AudioBuffer<float>& buffer,
+void HachiTuneAudioProcessor::processNonARAMode(juce::AudioBuffer<float>& buffer,
                                                    const juce::AudioPlayHead::PositionInfo& posInfo) {
     const int numSamples = buffer.getNumSamples();
     const int numChannels = buffer.getNumChannels();
@@ -185,7 +185,7 @@ void PitchEditorAudioProcessor::processNonARAMode(juce::AudioBuffer<float>& buff
     // Passthrough during capture
 }
 
-void PitchEditorAudioProcessor::finishCapture() {
+void HachiTuneAudioProcessor::finishCapture() {
     if (capturePosition < static_cast<int>(hostSampleRate * 0.5))
         return; // Too short
 
@@ -207,18 +207,18 @@ void PitchEditorAudioProcessor::finishCapture() {
     });
 }
 
-void PitchEditorAudioProcessor::startCapture() {
+void HachiTuneAudioProcessor::startCapture() {
     captureBuffer.clear();
     capturePosition = 0;
     captureState = CaptureState::Capturing;
 }
 
-void PitchEditorAudioProcessor::stopCapture() {
+void HachiTuneAudioProcessor::stopCapture() {
     if (captureState == CaptureState::Capturing)
         finishCapture();
 }
 
-void PitchEditorAudioProcessor::setMainComponent(MainComponent* mc) {
+void HachiTuneAudioProcessor::setMainComponent(MainComponent* mc) {
     mainComponent = mc;
     if (mc) {
         realtimeProcessor.setProject(mc->getProject());
@@ -229,11 +229,11 @@ void PitchEditorAudioProcessor::setMainComponent(MainComponent* mc) {
     }
 }
 
-juce::AudioProcessorEditor* PitchEditorAudioProcessor::createEditor() {
-    return new PitchEditorAudioProcessorEditor(*this);
+juce::AudioProcessorEditor* HachiTuneAudioProcessor::createEditor() {
+    return new HachiTuneAudioProcessorEditor(*this);
 }
 
-void PitchEditorAudioProcessor::getStateInformation(juce::MemoryBlock& destData) {
+void HachiTuneAudioProcessor::getStateInformation(juce::MemoryBlock& destData) {
     if (mainComponent && mainComponent->getProject()) {
         auto json = ProjectSerializer::toJson(*mainComponent->getProject());
         auto jsonString = juce::JSON::toString(json, false);
@@ -241,7 +241,7 @@ void PitchEditorAudioProcessor::getStateInformation(juce::MemoryBlock& destData)
     }
 }
 
-void PitchEditorAudioProcessor::setStateInformation(const void* data, int sizeInBytes) {
+void HachiTuneAudioProcessor::setStateInformation(const void* data, int sizeInBytes) {
     if (mainComponent && mainComponent->getProject()) {
         juce::String jsonString(juce::CharPointer_UTF8(static_cast<const char*>(data)),
                                 static_cast<size_t>(sizeInBytes));
@@ -253,13 +253,13 @@ void PitchEditorAudioProcessor::setStateInformation(const void* data, int sizeIn
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() {
-    return new PitchEditorAudioProcessor();
+    return new HachiTuneAudioProcessor();
 }
 
 #if JucePlugin_Enable_ARA
 #include "ARADocumentController.h"
 
 const ARA::ARAFactory* JUCE_CALLTYPE createARAFactory() {
-    return juce::ARADocumentControllerSpecialisation::createARAFactory<PitchEditorDocumentController>();
+    return juce::ARADocumentControllerSpecialisation::createARAFactory<HachiTuneDocumentController>();
 }
 #endif
