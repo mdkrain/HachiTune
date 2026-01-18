@@ -5,6 +5,9 @@
 #include <functional>
 #include <memory>
 #include <fstream>
+#include <atomic>
+#include <condition_variable>
+#include <mutex>
 
 #ifdef HAVE_ONNXRUNTIME
 #include <onnxruntime_cxx_api.h>
@@ -19,24 +22,24 @@ class Vocoder
 public:
     Vocoder();
     ~Vocoder();
-    
+
     /**
      * Load vocoder model from ONNX file.
      * @param modelPath Path to .onnx model file
      * @return true if successful
      */
     bool loadModel(const juce::File& modelPath);
-    
+
     /**
      * Check if model is loaded.
      */
     bool isLoaded() const { return loaded; }
-    
+
     /**
      * Check if ONNX Runtime is available.
      */
     static bool isOnnxRuntimeAvailable();
-    
+
     /**
      * Synthesize waveform from mel spectrogram and F0.
      * @param mel Mel spectrogram [T, NUM_MELS] (T frames, each with NUM_MELS values)
@@ -45,7 +48,7 @@ public:
      */
     std::vector<float> infer(const std::vector<std::vector<float>>& mel,
                               const std::vector<float>& f0);
-    
+
     /**
      * Synthesize with pitch shift.
      * @param mel Mel spectrogram
@@ -56,7 +59,7 @@ public:
     std::vector<float> inferWithPitchShift(const std::vector<std::vector<float>>& mel,
                                             const std::vector<float>& f0,
                                             float pitchShiftSemitones);
-    
+
     /**
      * Asynchronous inference with callback.
      * @param mel Mel spectrogram
@@ -67,20 +70,20 @@ public:
                     const std::vector<float>& f0,
                     std::function<void(std::vector<float>)> callback,
                     std::shared_ptr<std::atomic<bool>> cancelFlag = nullptr);
-    
+
     // Model parameters
     int getSampleRate() const { return sampleRate; }
     int getHopSize() const { return hopSize; }
     int getNumMels() const { return numMels; }
     bool isPitchControllable() const { return pitchControllable; }
-    
+
     // Device settings
     void setExecutionDevice(const juce::String& device);
     juce::String getExecutionDevice() const { return executionDevice; }
 
     // Reload model with new settings (call after changing device)
     bool reloadModel();
-    
+
 private:
     bool loaded = false;
     int sampleRate = 44100;
@@ -98,24 +101,30 @@ private:
 
     juce::File modelFile;
     std::unique_ptr<std::ofstream> logFile;
-    
+
+    // Thread safety for async operations
+    std::atomic<bool> isShuttingDown{false};
+    std::atomic<int> activeAsyncTasks{0};
+    std::mutex asyncMutex;
+    std::condition_variable asyncCondition;
+
     void log(const std::string& message);
-    
+
 #ifdef HAVE_ONNXRUNTIME
     std::unique_ptr<Ort::Env> onnxEnv;
     std::unique_ptr<Ort::Session> onnxSession;
     std::unique_ptr<Ort::AllocatorWithDefaultOptions> allocator;
-    
+
     // Input/output names (cached)
     std::vector<const char*> inputNames;
     std::vector<const char*> outputNames;
     std::vector<std::string> inputNameStrings;
     std::vector<std::string> outputNameStrings;
-    
+
     // Create session options based on current settings
     Ort::SessionOptions createSessionOptions();
 #endif
-    
+
     /**
      * Generate simple sine wave fallback when ONNX is not available.
      */

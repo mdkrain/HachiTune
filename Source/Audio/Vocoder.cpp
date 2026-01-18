@@ -36,6 +36,16 @@ Vocoder::Vocoder()
 
 Vocoder::~Vocoder()
 {
+    // Signal shutdown and wait for all async tasks to complete
+    isShuttingDown.store(true);
+
+    {
+        std::unique_lock<std::mutex> lock(asyncMutex);
+        asyncCondition.wait(lock, [this]() {
+            return activeAsyncTasks.load() == 0;
+        });
+    }
+
 #ifdef HAVE_ONNXRUNTIME
     onnxSession.reset();
     onnxEnv.reset();
@@ -426,14 +436,41 @@ void Vocoder::inferAsync(const std::vector<std::vector<float>>& mel,
                          std::function<void(std::vector<float>)> callback,
                          std::shared_ptr<std::atomic<bool>> cancelFlag)
 {
+    // Check if shutting down
+    if (isShuttingDown.load()) {
+        log("inferAsync: Vocoder is shutting down, skipping request");
+        return;
+    }
+
+    // Increment active task count
+    activeAsyncTasks.fetch_add(1);
+
     // Run inference in background thread
     std::thread([this, mel, f0, callback, cancelFlag]() {
+        // Check again at thread start
+        if (isShuttingDown.load()) {
+            // Decrement and notify
+            if (activeAsyncTasks.fetch_sub(1) == 1) {
+                std::lock_guard<std::mutex> lock(asyncMutex);
+                asyncCondition.notify_all();
+            }
+            return;
+        }
+
         auto result = this->infer(mel, f0);
-        
-        // If canceled, skip callback
+
+        // Decrement active task count and notify if this was the last task
+        if (activeAsyncTasks.fetch_sub(1) == 1) {
+            std::lock_guard<std::mutex> lock(asyncMutex);
+            asyncCondition.notify_all();
+        }
+
+        // If canceled or shutting down, skip callback
         if (cancelFlag && cancelFlag->load())
             return;
-        
+        if (isShuttingDown.load())
+            return;
+
         // Call callback on message thread
         juce::MessageManager::callAsync([callback, result, cancelFlag]() {
             if (cancelFlag && cancelFlag->load())

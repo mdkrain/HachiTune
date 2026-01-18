@@ -236,6 +236,52 @@ private:
 };
 
 /**
+ * Action for snapping a note to the nearest semitone (double-click).
+ * Combines midiNote and pitchOffset into a rounded integer MIDI value.
+ */
+class NoteSnapToSemitoneAction : public UndoableAction
+{
+public:
+    NoteSnapToSemitoneAction(Note* note,
+                             float oldMidi, float oldOffset,
+                             float newMidi,
+                             std::function<void(Note*)> onNoteChanged = nullptr)
+        : note(note), oldMidi(oldMidi), oldOffset(oldOffset),
+          newMidi(newMidi), onNoteChanged(onNoteChanged) {}
+
+    void undo() override
+    {
+        if (note) {
+            note->setMidiNote(oldMidi);
+            note->setPitchOffset(oldOffset);
+            note->markDirty();
+        }
+        if (onNoteChanged && note)
+            onNoteChanged(note);
+    }
+
+    void redo() override
+    {
+        if (note) {
+            note->setMidiNote(newMidi);
+            note->setPitchOffset(0.0f);
+            note->markDirty();
+        }
+        if (onNoteChanged && note)
+            onNoteChanged(note);
+    }
+
+    juce::String getName() const override { return "Snap to Semitone"; }
+
+private:
+    Note* note;
+    float oldMidi;
+    float oldOffset;
+    float newMidi;
+    std::function<void(Note*)> onNoteChanged;
+};
+
+/**
  * Action for splitting a note into two.
  */
 class NoteSplitAction : public UndoableAction
