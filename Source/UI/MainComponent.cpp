@@ -459,7 +459,7 @@ void MainComponent::saveProject() {
 
   auto target = project->getProjectFilePath();
   if (target == juce::File{}) {
-    // 防止在对话框打开期间重复触发
+    // Prevent re-triggering while dialog is open
     if (fileChooser != nullptr)
       return;
 
@@ -480,9 +480,9 @@ void MainComponent::saveProject() {
                         juce::FileBrowserComponent::warnAboutOverwriting;
 
     fileChooser->launchAsync(chooserFlags, [this](const juce::FileChooser &fc) {
-      fileChooser.reset();  // 允许下次打开对话框
-
       auto file = fc.getResult();
+      fileChooser.reset();  // Allow next dialog to open (must be after getResult)
+
       if (file == juce::File{})
         return;
 
@@ -512,7 +512,7 @@ void MainComponent::saveProject() {
 }
 
 void MainComponent::openFile() {
-  // 防止在对话框打开期间重复触发
+  // Prevent re-triggering while dialog is open
   if (fileChooser != nullptr)
     return;
 
@@ -523,8 +523,8 @@ void MainComponent::openFile() {
                       juce::FileBrowserComponent::canSelectFiles;
 
   fileChooser->launchAsync(chooserFlags, [this](const juce::FileChooser &fc) {
-    fileChooser.reset();  // 允许下次打开对话框
     auto file = fc.getResult();
+    fileChooser.reset();  // Allow next dialog to open
     if (file.existsAsFile()) {
       loadAudioFile(file);
     }
@@ -969,7 +969,7 @@ void MainComponent::exportFile() {
   if (!project)
     return;
 
-  // 防止在对话框打开期间重复触发
+  // Prevent re-triggering while dialog is open
   if (fileChooser != nullptr)
     return;
 
@@ -981,96 +981,93 @@ void MainComponent::exportFile() {
                       juce::FileBrowserComponent::warnAboutOverwriting;
 
   fileChooser->launchAsync(chooserFlags, [this](const juce::FileChooser &fc) {
-    // 回调结束时清空 fileChooser，允许下次打开对话框
-    auto cleanup = [this]() { fileChooser.reset(); };
-    struct ScopeGuard {
-      std::function<void()> fn;
-      ~ScopeGuard() { fn(); }
-    } guard{cleanup};
-
+    // Get result and reset fileChooser to allow next dialog
     auto file = fc.getResult();
-    if (file != juce::File{}) {
-      auto &audioData = project->getAudioData();
+    fileChooser.reset();
 
-      // Show progress
-      toolbar.showProgress(TR("progress.exporting_audio"));
-      toolbar.setProgress(0.0f);
+    if (file == juce::File{})
+      return;
 
-      // Delete existing file if it exists (to ensure clean replacement)
-      if (file.existsAsFile()) {
-        if (!file.deleteFile()) {
-          toolbar.hideProgress();
-          StyledMessageBox::show(this, TR("dialog.export_failed"),
-                                 TR("dialog.failed_delete") + "\n" +
-                                     file.getFullPathName(),
-                                 StyledMessageBox::WarningIcon);
-          return;
-        }
-      }
+    auto &audioData = project->getAudioData();
 
-      toolbar.setProgress(0.3f);
+    // Show progress
+    toolbar.showProgress(TR("progress.exporting_audio"));
+    toolbar.setProgress(0.0f);
 
-      // Create output stream
-      std::unique_ptr<juce::FileOutputStream> outputStream =
-          std::make_unique<juce::FileOutputStream>(file);
-
-      if (!outputStream->openedOk()) {
+    // Delete existing file if it exists (to ensure clean replacement)
+    if (file.existsAsFile()) {
+      if (!file.deleteFile()) {
         toolbar.hideProgress();
         StyledMessageBox::show(this, TR("dialog.export_failed"),
-                               TR("dialog.failed_open") + "\n" +
+                               TR("dialog.failed_delete") + "\n" +
                                    file.getFullPathName(),
                                StyledMessageBox::WarningIcon);
         return;
       }
+    }
 
-      toolbar.setProgress(0.5f);
+    toolbar.setProgress(0.3f);
 
-      // Create writer
-      juce::WavAudioFormat wavFormat;
-      std::unique_ptr<juce::AudioFormatWriter> writer(wavFormat.createWriterFor(
-          outputStream.release(), // Writer takes ownership of stream
-          SAMPLE_RATE,
-          1,  // mono
-          16, // 16-bit
-          {}, 0));
+    // Create output stream
+    std::unique_ptr<juce::FileOutputStream> outputStream =
+        std::make_unique<juce::FileOutputStream>(file);
 
-      if (writer == nullptr) {
-        toolbar.hideProgress();
-        StyledMessageBox::show(this, TR("dialog.export_failed"),
-                               TR("dialog.failed_create_writer") + "\n" +
-                                   file.getFullPathName(),
-                               StyledMessageBox::WarningIcon);
-        return;
-      }
+    if (!outputStream->openedOk()) {
+      toolbar.hideProgress();
+      StyledMessageBox::show(this, TR("dialog.export_failed"),
+                             TR("dialog.failed_open") + "\n" +
+                                 file.getFullPathName(),
+                             StyledMessageBox::WarningIcon);
+      return;
+    }
 
-      toolbar.setProgress(0.7f);
+    toolbar.setProgress(0.5f);
 
-      // Write audio data
-      bool writeSuccess = writer->writeFromAudioSampleBuffer(
-          audioData.waveform, 0, audioData.waveform.getNumSamples());
+    // Create writer
+    juce::WavAudioFormat wavFormat;
+    std::unique_ptr<juce::AudioFormatWriter> writer(wavFormat.createWriterFor(
+        outputStream.release(), // Writer takes ownership of stream
+        SAMPLE_RATE,
+        1,  // mono
+        16, // 16-bit
+        {}, 0));
 
-      toolbar.setProgress(0.9f);
+    if (writer == nullptr) {
+      toolbar.hideProgress();
+      StyledMessageBox::show(this, TR("dialog.export_failed"),
+                             TR("dialog.failed_create_writer") + "\n" +
+                                 file.getFullPathName(),
+                             StyledMessageBox::WarningIcon);
+      return;
+    }
 
-      // Explicitly flush and close writer (destructor will also do this, but
-      // explicit is better)
-      writer->flush();
-      writer.reset(); // Explicitly release writer and underlying stream
+    toolbar.setProgress(0.7f);
 
-      toolbar.setProgress(1.0f);
+    // Write audio data
+    bool writeSuccess = writer->writeFromAudioSampleBuffer(
+        audioData.waveform, 0, audioData.waveform.getNumSamples());
 
-      if (writeSuccess) {
-        toolbar.hideProgress();
-        StyledMessageBox::show(this, TR("dialog.export_complete"),
-                               TR("dialog.audio_exported") + "\n" +
-                                   file.getFullPathName(),
-                               StyledMessageBox::InfoIcon);
-      } else {
-        toolbar.hideProgress();
-        StyledMessageBox::show(this, TR("dialog.export_failed"),
-                               TR("dialog.failed_write") + "\n" +
-                                   file.getFullPathName(),
-                               StyledMessageBox::WarningIcon);
-      }
+    toolbar.setProgress(0.9f);
+
+    // Explicitly flush and close writer (destructor will also do this, but
+    // explicit is better)
+    writer->flush();
+    writer.reset(); // Explicitly release writer and underlying stream
+
+    toolbar.setProgress(1.0f);
+
+    if (writeSuccess) {
+      toolbar.hideProgress();
+      StyledMessageBox::show(this, TR("dialog.export_complete"),
+                             TR("dialog.audio_exported") + "\n" +
+                                 file.getFullPathName(),
+                             StyledMessageBox::InfoIcon);
+    } else {
+      toolbar.hideProgress();
+      StyledMessageBox::show(this, TR("dialog.export_failed"),
+                             TR("dialog.failed_write") + "\n" +
+                                 file.getFullPathName(),
+                             StyledMessageBox::WarningIcon);
     }
   });
 }
@@ -1079,7 +1076,7 @@ void MainComponent::exportMidiFile() {
   if (!project)
     return;
 
-  // 防止在对话框打开期间重复触发
+  // Prevent re-triggering while dialog is open
   if (fileChooser != nullptr)
     return;
 
@@ -1107,9 +1104,9 @@ void MainComponent::exportMidiFile() {
                       juce::FileBrowserComponent::warnAboutOverwriting;
 
   fileChooser->launchAsync(chooserFlags, [this](const juce::FileChooser& fc) {
-    fileChooser.reset();  // 允许下次打开对话框
-
     auto file = fc.getResult();
+    fileChooser.reset();  // Allow next dialog to open (must be after getResult)
+
     if (file == juce::File{})
       return;
 
@@ -1368,7 +1365,7 @@ void MainComponent::undo() {
 
   if (undoManager && undoManager->canUndo()) {
     undoManager->undo();
-    pianoRoll.invalidateBasePitchCache();  // 确保 note split 等操作后刷新缓存
+    pianoRoll.invalidateBasePitchCache();  // Refresh cache after note split etc.
     pianoRoll.repaint();
 
     if (project) {
@@ -1383,7 +1380,7 @@ void MainComponent::undo() {
 void MainComponent::redo() {
   if (undoManager && undoManager->canRedo()) {
     undoManager->redo();
-    pianoRoll.invalidateBasePitchCache();  // 确保 note split 等操作后刷新缓存
+    pianoRoll.invalidateBasePitchCache();  // Refresh cache after note split etc.
     pianoRoll.repaint();
 
     if (project) {

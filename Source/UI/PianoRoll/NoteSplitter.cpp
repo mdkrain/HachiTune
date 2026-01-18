@@ -50,14 +50,17 @@ bool NoteSplitter::splitNoteAtFrame(Note* note, int splitFrame) {
     // Modify the first note (left part)
     note->setEndFrame(splitFrame);
 
+    // Save first note BEFORE addNote (addNote may invalidate note pointer due to vector reallocation)
+    Note firstNote = *note;
+
     // Add the second note to project
     project->addNote(secondNote);
 
-    // Create undo action - 不传递回调，避免捕获 this 导致生命周期问题
-    // UI 刷新由 UndoManager 的 onUndoRedo 回调统一处理
+    // Create undo action - don't pass callback to avoid lifetime issues
+    // UI refresh is handled by UndoManager's onUndoRedo callback
     if (undoManager) {
         auto action = std::make_unique<NoteSplitAction>(
-            project, originalNote, *note, secondNote, nullptr);
+            project, originalNote, firstNote, secondNote, nullptr);
         undoManager->addAction(std::move(action));
     }
 
