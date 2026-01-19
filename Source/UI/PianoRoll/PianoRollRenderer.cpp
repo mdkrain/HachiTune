@@ -119,6 +119,19 @@ void PianoRollRenderer::drawGrid(juce::Graphics& g, int width, int height) {
     float duration = project ? project->getAudioData().getDuration() : 60.0f;
     float totalWidth = std::max(duration * coordMapper->getPixelsPerSecond(), static_cast<float>(width));
     float totalHeight = (MAX_MIDI_NOTE - MIN_MIDI_NOTE) * coordMapper->getPixelsPerSemitone();
+    float pixelsPerSemitone = coordMapper->getPixelsPerSemitone();
+
+    // Fill black key rows with darker background
+    g.setColour(juce::Colour(0xFF141418));  // Noticeably darker than main background
+    for (int midi = MIN_MIDI_NOTE; midi <= MAX_MIDI_NOTE; ++midi) {
+        int noteInOctave = midi % 12;
+        bool isBlack = (noteInOctave == 1 || noteInOctave == 3 || noteInOctave == 6 ||
+                        noteInOctave == 8 || noteInOctave == 10);
+        if (isBlack) {
+            float y = coordMapper->midiToY(static_cast<float>(midi));
+            g.fillRect(0.0f, y, totalWidth, pixelsPerSemitone);
+        }
+    }
 
     // Horizontal lines (pitch)
     g.setColour(juce::Colour(COLOR_GRID));

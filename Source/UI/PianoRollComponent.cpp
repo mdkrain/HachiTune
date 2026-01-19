@@ -271,6 +271,18 @@ void PianoRollComponent::drawGrid(juce::Graphics &g) {
       std::max(duration * pixelsPerSecond, static_cast<float>(getWidth()));
   float height = (MAX_MIDI_NOTE - MIN_MIDI_NOTE) * pixelsPerSemitone;
 
+  // Fill black key rows with semi-transparent darker background
+  g.setColour(juce::Colour(0x18000000));  // Semi-transparent black overlay
+  for (int midi = MIN_MIDI_NOTE; midi <= MAX_MIDI_NOTE; ++midi) {
+    int noteInOctave = midi % 12;
+    bool isBlack = (noteInOctave == 1 || noteInOctave == 3 || noteInOctave == 6 ||
+                    noteInOctave == 8 || noteInOctave == 10);
+    if (isBlack) {
+      float y = midiToY(static_cast<float>(midi));
+      g.fillRect(0.0f, y, width, pixelsPerSemitone);
+    }
+  }
+
   // Horizontal lines (pitch)
   g.setColour(juce::Colour(COLOR_GRID));
 
@@ -790,8 +802,10 @@ void PianoRollComponent::drawPianoKeys(juce::Graphics &g) {
                                     "F#", "G",  "G#", "A",  "A#", "B"};
 
   // Draw each key
+  // Use truncated scrollY to match grid origin (which uses static_cast<int>(scrollY))
+  int scrollYInt = static_cast<int>(scrollY);
   for (int midi = MIN_MIDI_NOTE; midi <= MAX_MIDI_NOTE; ++midi) {
-    float y = midiToY(static_cast<float>(midi)) - static_cast<float>(scrollY) +
+    float y = midiToY(static_cast<float>(midi)) - static_cast<float>(scrollYInt) +
               timelineHeight;
     int noteInOctave = midi % 12;
 
