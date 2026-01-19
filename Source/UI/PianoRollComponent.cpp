@@ -23,22 +23,27 @@ PianoRollComponent::PianoRollComponent() {
   // Setup scrollZoomController callbacks
   scrollZoomController->onRepaintNeeded = [this]() { repaint(); };
   scrollZoomController->onZoomChanged = [this](float pps) {
-    if (onZoomChanged) onZoomChanged(pps);
+    if (onZoomChanged)
+      onZoomChanged(pps);
   };
   scrollZoomController->onScrollChanged = [this](double x) {
-    if (onScrollChanged) onScrollChanged(x);
+    if (onScrollChanged)
+      onScrollChanged(x);
   };
 
   // Setup pitchEditor callbacks
-  pitchEditor->onNoteSelected = [this](Note* note) {
-    if (onNoteSelected) onNoteSelected(note);
+  pitchEditor->onNoteSelected = [this](Note *note) {
+    if (onNoteSelected)
+      onNoteSelected(note);
   };
   pitchEditor->onPitchEdited = [this]() {
     repaint();
-    if (onPitchEdited) onPitchEdited();
+    if (onPitchEdited)
+      onPitchEdited();
   };
   pitchEditor->onPitchEditFinished = [this]() {
-    if (onPitchEditFinished) onPitchEditFinished();
+    if (onPitchEditFinished)
+      onPitchEditFinished();
   };
   pitchEditor->onBasePitchCacheInvalidated = [this]() {
     invalidateBasePitchCache();
@@ -147,10 +152,9 @@ void PianoRollComponent::paint(juce::Graphics &g) {
       constexpr float triangleWidth = 10.0f;
       constexpr float triangleHeight = 8.0f;
       juce::Path triangle;
-      triangle.addTriangle(
-          x - triangleWidth * 0.5f, 0.0f,           // Top-left
-          x + triangleWidth * 0.5f, 0.0f,           // Top-right
-          x, triangleHeight                          // Bottom-center (pointing down)
+      triangle.addTriangle(x - triangleWidth * 0.5f, 0.0f, // Top-left
+                           x + triangleWidth * 0.5f, 0.0f, // Top-right
+                           x, triangleHeight // Bottom-center (pointing down)
       );
       g.fillPath(triangle);
     }
@@ -272,11 +276,12 @@ void PianoRollComponent::drawGrid(juce::Graphics &g) {
   float height = (MAX_MIDI_NOTE - MIN_MIDI_NOTE) * pixelsPerSemitone;
 
   // Fill black key rows with semi-transparent darker background
-  g.setColour(juce::Colour(0x18000000));  // Semi-transparent black overlay
+  g.setColour(juce::Colour(0x18000000)); // Semi-transparent black overlay
   for (int midi = MIN_MIDI_NOTE; midi <= MAX_MIDI_NOTE; ++midi) {
     int noteInOctave = midi % 12;
-    bool isBlack = (noteInOctave == 1 || noteInOctave == 3 || noteInOctave == 6 ||
-                    noteInOctave == 8 || noteInOctave == 10);
+    bool isBlack =
+        (noteInOctave == 1 || noteInOctave == 3 || noteInOctave == 6 ||
+         noteInOctave == 8 || noteInOctave == 10);
     if (isBlack) {
       float y = midiToY(static_cast<float>(midi));
       g.fillRect(0.0f, y, width, pixelsPerSemitone);
@@ -645,11 +650,12 @@ void PianoRollComponent::drawNotes(juce::Graphics &g) {
       float noteH = pixelsPerSemitone;
 
       // Draw dashed vertical line
-      g.setColour(juce::Colour(0xFFFF6B6B));  // Red-ish color for visibility
+      g.setColour(juce::Colour(0xFFFF6B6B)); // Red-ish color for visibility
       float dashLength = 4.0f;
       for (float dy = 0; dy < noteH; dy += dashLength * 2) {
         float segmentLength = std::min(dashLength, noteH - dy);
-        g.drawLine(splitGuideX, noteY + dy, splitGuideX, noteY + dy + segmentLength, 2.0f);
+        g.drawLine(splitGuideX, noteY + dy, splitGuideX,
+                   noteY + dy + segmentLength, 2.0f);
       }
     }
   }
@@ -682,14 +688,17 @@ void PianoRollComponent::drawPitchCurves(juce::Graphics &g) {
           std::min(note.getEndFrame(), static_cast<int>(audioData.f0.size()));
 
       for (int i = startFrame; i < endFrame; ++i) {
-        // Base pitch: during drag, add pitchOffset to simulate the new base pitch
-        // This gives real-time preview of how the curve will look after drag completes
+        // Base pitch: during drag, add pitchOffset to simulate the new base
+        // pitch This gives real-time preview of how the curve will look after
+        // drag completes
         float baseMidi =
             (i < static_cast<int>(audioData.basePitch.size()))
-                ? audioData.basePitch[static_cast<size_t>(i)] + note.getPitchOffset()
+                ? audioData.basePitch[static_cast<size_t>(i)] +
+                      note.getPitchOffset()
                 : ((i < static_cast<int>(audioData.f0.size()) &&
                     audioData.f0[static_cast<size_t>(i)] > 0.0f)
-                       ? freqToMidi(audioData.f0[static_cast<size_t>(i)]) + note.getPitchOffset()
+                       ? freqToMidi(audioData.f0[static_cast<size_t>(i)]) +
+                             note.getPitchOffset()
                        : 0.0f);
         float deltaMidi = (i < static_cast<int>(audioData.deltaPitch.size()))
                               ? audioData.deltaPitch[static_cast<size_t>(i)]
@@ -802,11 +811,12 @@ void PianoRollComponent::drawPianoKeys(juce::Graphics &g) {
                                     "F#", "G",  "G#", "A",  "A#", "B"};
 
   // Draw each key
-  // Use truncated scrollY to match grid origin (which uses static_cast<int>(scrollY))
+  // Use truncated scrollY to match grid origin (which uses
+  // static_cast<int>(scrollY))
   int scrollYInt = static_cast<int>(scrollY);
   for (int midi = MIN_MIDI_NOTE; midi <= MAX_MIDI_NOTE; ++midi) {
-    float y = midiToY(static_cast<float>(midi)) - static_cast<float>(scrollYInt) +
-              timelineHeight;
+    float y = midiToY(static_cast<float>(midi)) -
+              static_cast<float>(scrollYInt) + timelineHeight;
     int noteInOctave = midi % 12;
 
     // Check if it's a black key
@@ -1043,7 +1053,7 @@ void PianoRollComponent::mouseUp(const juce::MouseEvent &e) {
   // Handle box selection end
   if (boxSelector->isSelecting()) {
     auto notesInRect = boxSelector->getNotesInRect(project, coordMapper.get());
-    for (auto* note : notesInRect) {
+    for (auto *note : notesInRect) {
       note->setSelected(true);
     }
     boxSelector->endSelection();
@@ -1078,17 +1088,21 @@ void PianoRollComponent::mouseUp(const juce::MouseEvent &e) {
       draggedNote->setPitchOffset(
           0.0f); // Reset offset since it's baked into midiNote
 
-      // Find adjacent notes to expand dirty range (basePitch smoothing affects neighbors)
-      const auto& notes = project->getNotes();
+      // Find adjacent notes to expand dirty range (basePitch smoothing affects
+      // neighbors)
+      const auto &notes = project->getNotes();
       int expandedStart = startFrame;
       int expandedEnd = endFrame;
-      for (const auto& note : notes) {
-        if (&note == draggedNote) continue;
+      for (const auto &note : notes) {
+        if (&note == draggedNote)
+          continue;
         // If note is adjacent (within smoothing window ~20 frames), include it
-        if (note.getEndFrame() > startFrame - 30 && note.getEndFrame() <= startFrame) {
+        if (note.getEndFrame() > startFrame - 30 &&
+            note.getEndFrame() <= startFrame) {
           expandedStart = std::min(expandedStart, note.getStartFrame());
         }
-        if (note.getStartFrame() < endFrame + 30 && note.getStartFrame() >= endFrame) {
+        if (note.getStartFrame() < endFrame + 30 &&
+            note.getStartFrame() >= endFrame) {
           expandedEnd = std::max(expandedEnd, note.getEndFrame());
         }
       }
@@ -1125,7 +1139,8 @@ void PianoRollComponent::mouseUp(const juce::MouseEvent &e) {
         auto action = std::make_unique<NotePitchDragAction>(
             draggedNote, &audioData.f0, originalMidiNote,
             originalMidiNote + newOffset, std::move(f0Edits),
-            [this, capturedExpandedStart, capturedExpandedEnd, capturedF0Size](Note *n) {
+            [this, capturedExpandedStart, capturedExpandedEnd,
+             capturedF0Size](Note *n) {
               if (project) {
                 PitchCurveProcessor::rebuildBaseFromNotes(*project);
                 PitchCurveProcessor::composeF0InPlace(*project,
@@ -1134,7 +1149,8 @@ void PianoRollComponent::mouseUp(const juce::MouseEvent &e) {
                 invalidateBasePitchCache();
                 // Set dirty range for synthesis (use expanded range)
                 int smoothStart = std::max(0, capturedExpandedStart - 60);
-                int smoothEnd = std::min(capturedF0Size, capturedExpandedEnd + 60);
+                int smoothEnd =
+                    std::min(capturedF0Size, capturedExpandedEnd + 60);
                 project->setF0DirtyRange(smoothStart, smoothEnd);
                 // Clear note's dirty flag since we're using F0 dirty range
                 // instead This prevents getDirtyFrameRange() from expanding the
@@ -1213,13 +1229,14 @@ void PianoRollComponent::mouseDoubleClick(const juce::MouseEvent &e) {
       // Create undo action with callback to rebuild pitch curves
       if (undoManager) {
         auto action = std::make_unique<NoteSnapToSemitoneAction>(
-            note, oldMidi, oldOffset, snappedMidi,
-            [this](Note* n) {
+            note, oldMidi, oldOffset, snappedMidi, [this](Note *n) {
               // Rebuild pitch curves after undo/redo
               PitchCurveProcessor::rebuildBaseFromNotes(*project);
               PitchCurveProcessor::composeF0InPlace(*project, false);
-              if (onPitchEdited) onPitchEdited();
-              if (onPitchEditFinished) onPitchEditFinished();
+              if (onPitchEdited)
+                onPitchEdited();
+              if (onPitchEditFinished)
+                onPitchEditFinished();
               repaint();
             });
         undoManager->addAction(std::move(action));
@@ -1423,7 +1440,7 @@ void PianoRollComponent::setProject(Project *proj) {
 
   // Clear all caches when project changes to free memory
   invalidateBasePitchCache();
-  waveformCache = juce::Image();  // Clear waveform cache
+  waveformCache = juce::Image(); // Clear waveform cache
   cachedScrollX = -1.0;
   cachedPixelsPerSecond = -1.0f;
   cachedWidth = 0;
@@ -1439,7 +1456,8 @@ void PianoRollComponent::setUndoManager(PitchUndoManager *manager) {
   noteSplitter->setUndoManager(manager);
 }
 
-bool PianoRollComponent::keyPressed(const juce::KeyPress& key, juce::Component*) {
+bool PianoRollComponent::keyPressed(const juce::KeyPress &key,
+                                    juce::Component *) {
   // Ctrl+Z or Cmd+Z: Undo
   if (key == juce::KeyPress('z', juce::ModifierKeys::ctrlModifier, 0) ||
       key == juce::KeyPress('z', juce::ModifierKeys::commandModifier, 0)) {
@@ -1451,8 +1469,14 @@ bool PianoRollComponent::keyPressed(const juce::KeyPress& key, juce::Component*)
 
   // Ctrl+Y or Ctrl+Shift+Z or Cmd+Shift+Z: Redo
   if (key == juce::KeyPress('y', juce::ModifierKeys::ctrlModifier, 0) ||
-      key == juce::KeyPress('z', juce::ModifierKeys::ctrlModifier | juce::ModifierKeys::shiftModifier, 0) ||
-      key == juce::KeyPress('z', juce::ModifierKeys::commandModifier | juce::ModifierKeys::shiftModifier, 0)) {
+      key == juce::KeyPress('z',
+                            juce::ModifierKeys::ctrlModifier |
+                                juce::ModifierKeys::shiftModifier,
+                            0) ||
+      key == juce::KeyPress('z',
+                            juce::ModifierKeys::commandModifier |
+                                juce::ModifierKeys::shiftModifier,
+                            0)) {
     if (onRedo) {
       onRedo();
       return true;
@@ -1490,7 +1514,8 @@ void PianoRollComponent::setCursorTime(double time) {
         static_cast<float>(t * pixelsPerSecond - scrollX) + pianoKeysWidth;
     constexpr int triangleHalfWidth = 6; // Half of triangle width + margin
     int rectX = static_cast<int>(x) - triangleHalfWidth;
-    int rectWidth = triangleHalfWidth * 2 + 2; // Full triangle width + cursor line
+    int rectWidth =
+        triangleHalfWidth * 2 + 2; // Full triangle width + cursor line
     // Start from 0 (top of timeline) to include triangle indicator
     return juce::Rectangle<int>(rectX, 0, rectWidth, getHeight());
   };
@@ -1798,8 +1823,8 @@ void PianoRollComponent::commitPitchDrawing() {
   if (undoManager && project) {
     auto &audioData = project->getAudioData();
     auto action = std::make_unique<F0EditAction>(
-        &audioData.f0, &audioData.deltaPitch, &audioData.voicedMask, drawingEdits,
-        [this](int minFrame, int maxFrame) {
+        &audioData.f0, &audioData.deltaPitch, &audioData.voicedMask,
+        drawingEdits, [this](int minFrame, int maxFrame) {
           // Callback to trigger resynthesis after undo/redo
           if (project) {
             project->setF0DirtyRange(minFrame, maxFrame);
@@ -1876,9 +1901,10 @@ void PianoRollComponent::applyPitchPoint(int frameIndex, int midiCents) {
     auto applyFrameFirst = [&](int idx, int cents) {
       const float newFreq = midiToFreq(static_cast<float>(cents) / 100.0f);
       const float oldF0 = audioData.f0[idx];
-      const float oldDelta = (idx < static_cast<int>(audioData.deltaPitch.size()))
-                                 ? audioData.deltaPitch[idx]
-                                 : 0.0f;
+      const float oldDelta =
+          (idx < static_cast<int>(audioData.deltaPitch.size()))
+              ? audioData.deltaPitch[idx]
+              : 0.0f;
       const bool oldVoiced =
           (idx < static_cast<int>(audioData.voicedMask.size()))
               ? audioData.voicedMask[idx]
@@ -1893,8 +1919,8 @@ void PianoRollComponent::applyPitchPoint(int frameIndex, int midiCents) {
       auto it = drawingEditIndexByFrame.find(idx);
       if (it == drawingEditIndexByFrame.end()) {
         drawingEditIndexByFrame.emplace(idx, drawingEdits.size());
-        drawingEdits.push_back(
-            F0FrameEdit{idx, oldF0, newFreq, oldDelta, newDelta, oldVoiced, true});
+        drawingEdits.push_back(F0FrameEdit{idx, oldF0, newFreq, oldDelta,
+                                           newDelta, oldVoiced, true});
         // Clear deltaPitch for any note containing this frame so changes are
         // visible immediately
         auto &notes = project->getNotes();
@@ -1945,7 +1971,8 @@ void PianoRollComponent::applyPitchPoint(int frameIndex, int midiCents) {
     auto it = drawingEditIndexByFrame.find(idx);
     if (it == drawingEditIndexByFrame.end()) {
       drawingEditIndexByFrame.emplace(idx, drawingEdits.size());
-      drawingEdits.push_back(F0FrameEdit{idx, oldF0, newFreq, oldDelta, newDelta, oldVoiced, true});
+      drawingEdits.push_back(F0FrameEdit{idx, oldF0, newFreq, oldDelta,
+                                         newDelta, oldVoiced, true});
 
       // Clear deltaPitch for any note containing this frame so changes are
       // visible immediately

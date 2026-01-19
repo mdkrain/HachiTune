@@ -1,15 +1,15 @@
 #pragma once
 
-#include "../Audio/AudioEngine.h"
-#include "../Audio/FCPEPitchDetector.h"
-#include "../Audio/RMVPEPitchDetector.h"
-#include "../Audio/PitchDetector.h"
-#include "../Audio/SOMEDetector.h"
-#include "../Audio/Vocoder.h"
-#include "../Audio/IO/AudioFileManager.h"
 #include "../Audio/Analysis/AudioAnalyzer.h"
-#include "../Audio/Synthesis/IncrementalSynthesizer.h"
+#include "../Audio/AudioEngine.h"
 #include "../Audio/Engine/PlaybackController.h"
+#include "../Audio/FCPEPitchDetector.h"
+#include "../Audio/IO/AudioFileManager.h"
+#include "../Audio/PitchDetector.h"
+#include "../Audio/RMVPEPitchDetector.h"
+#include "../Audio/SOMEDetector.h"
+#include "../Audio/Synthesis/IncrementalSynthesizer.h"
+#include "../Audio/Vocoder.h"
 #include "../JuceHeader.h"
 #include "../Models/Project.h"
 #include "../Utils/UndoManager.h"
@@ -75,7 +75,7 @@ public:
 
   // Plugin mode - update playback position from host
   void updatePlaybackPosition(double timeSeconds);
-  void notifyHostStopped();  // Called when host stops playback
+  void notifyHostStopped(); // Called when host stops playback
 
 private:
   void openFile();
@@ -159,6 +159,13 @@ private:
   juce::CriticalSection loadingMessageLock;
   juce::String loadingMessage;
   juce::String lastLoadingMessage;
+
+  // Async render state (plugin mode)
+  std::thread renderThread;
+  std::atomic<bool> cancelRender{false};
+
+  // Incremental synthesis coalescing
+  std::atomic<bool> pendingIncrementalResynth{false};
 
   // Cursor update throttling
   std::atomic<double> pendingCursorTime{0.0};

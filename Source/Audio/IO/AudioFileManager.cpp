@@ -1,224 +1,293 @@
 #include "AudioFileManager.h"
 #include "../../Utils/Localization.h"
 
-AudioFileManager::AudioFileManager() = default;
+AudioFileManager::AudioFileManager() {
+  workerThread = std::thread([this]() {
+    for (;;) {
+      LoadTask task;
+      {
+        std::unique_lock<std::mutex> lock(queueMutex);
+        queueCv.wait(lock, [this]() {
+          return isShuttingDown.load() || !loadQueue.empty();
+        });
+
+        if (isShuttingDown.load() && loadQueue.empty())
+          return;
+
+        task = std::move(loadQueue.front());
+        loadQueue.pop_front();
+        currentCancelFlag = task.cancelFlag;
+        isLoadingAudio = true;
+      }
+
+      auto finishTask = [this]() {
+        std::lock_guard<std::mutex> lock(queueMutex);
+        currentCancelFlag.reset();
+        isLoadingAudio = false;
+      };
+
+      // Early cancel
+      if (task.cancelFlag && task.cancelFlag->load()) {
+        finishTask();
+        continue;
+      }
+
+      if (isShuttingDown.load()) {
+        finishTask();
+        continue;
+      }
+
+      if (task.onProgress)
+        task.onProgress(0.05, TR("progress.loading_audio"));
+
+      juce::AudioFormatManager formatManager;
+      formatManager.registerBasicFormats();
+
+      std::unique_ptr<juce::AudioFormatReader> reader(
+          formatManager.createReaderFor(task.file));
+      if (reader == nullptr || (task.cancelFlag && task.cancelFlag->load()) ||
+          isShuttingDown.load()) {
+        finishTask();
+        continue;
+      }
+
+      const int numSamples = static_cast<int>(reader->lengthInSamples);
+      const int srcSampleRate = static_cast<int>(reader->sampleRate);
+
+      if (task.onProgress)
+        task.onProgress(0.10, TR("progress.reading_audio"));
+
+      juce::AudioBuffer<float> buffer;
+      if (reader->numChannels == 1) {
+        buffer.setSize(1, numSamples);
+        reader->read(&buffer, 0, numSamples, 0, true, false);
+      } else {
+        juce::AudioBuffer<float> stereoBuffer(2, numSamples);
+        reader->read(&stereoBuffer, 0, numSamples, 0, true, true);
+        buffer = convertToMono(stereoBuffer);
+      }
+
+      if ((task.cancelFlag && task.cancelFlag->load()) ||
+          isShuttingDown.load()) {
+        finishTask();
+        continue;
+      }
+
+      if (srcSampleRate != SAMPLE_RATE) {
+        if (task.onProgress)
+          task.onProgress(0.18, TR("progress.resampling"));
+        buffer = resampleIfNeeded(buffer, srcSampleRate, SAMPLE_RATE);
+      }
+
+      if ((task.cancelFlag && task.cancelFlag->load()) ||
+          isShuttingDown.load()) {
+        finishTask();
+        continue;
+      }
+
+      if (task.onProgress)
+        task.onProgress(0.22, TR("progress.audio_loaded"));
+
+      auto onComplete = std::move(task.onComplete);
+      auto cancelFlag = task.cancelFlag;
+      auto file = task.file;
+      finishTask();
+
+      if ((cancelFlag && cancelFlag->load()) || isShuttingDown.load())
+        continue;
+
+      juce::MessageManager::callAsync(
+          [onComplete, buffer = std::move(buffer), file]() mutable {
+            if (onComplete)
+              onComplete(std::move(buffer), SAMPLE_RATE, file);
+          });
+    }
+  });
+}
 
 AudioFileManager::~AudioFileManager() {
-    cancelFlag = true;
-    if (loaderThread.joinable())
-        loaderThread.join();
+  cancelLoading();
+  isShuttingDown = true;
+  queueCv.notify_all();
+  if (workerThread.joinable())
+    workerThread.join();
 }
 
-void AudioFileManager::showOpenDialog(std::function<void(const juce::File&)> onFileSelected) {
-    fileChooser = std::make_unique<juce::FileChooser>(
-        TR("dialog.select_audio"), juce::File{}, "*.wav;*.mp3;*.flac;*.aiff");
+void AudioFileManager::cancelLoading() {
+  std::lock_guard<std::mutex> lock(queueMutex);
 
-    auto chooserFlags = juce::FileBrowserComponent::openMode |
-                        juce::FileBrowserComponent::canSelectFiles;
+  if (currentCancelFlag)
+    currentCancelFlag->store(true);
 
-    fileChooser->launchAsync(chooserFlags, [onFileSelected](const juce::FileChooser& fc) {
-        auto file = fc.getResult();
-        if (file.existsAsFile() && onFileSelected)
-            onFileSelected(file);
-    });
+  for (auto &task : loadQueue) {
+    if (task.cancelFlag)
+      task.cancelFlag->store(true);
+  }
+  loadQueue.clear();
 }
 
-void AudioFileManager::showSaveDialog(const juce::File& defaultPath,
-                                      std::function<void(const juce::File&)> onFileSelected) {
-    fileChooser = std::make_unique<juce::FileChooser>(TR("dialog.save_project"), defaultPath, "*.htpx");
+void AudioFileManager::showOpenDialog(
+    std::function<void(const juce::File &)> onFileSelected) {
+  fileChooser = std::make_unique<juce::FileChooser>(
+      TR("dialog.select_audio"), juce::File{}, "*.wav;*.mp3;*.flac;*.aiff");
 
-    auto chooserFlags = juce::FileBrowserComponent::saveMode |
-                        juce::FileBrowserComponent::canSelectFiles |
-                        juce::FileBrowserComponent::warnAboutOverwriting;
+  auto chooserFlags = juce::FileBrowserComponent::openMode |
+                      juce::FileBrowserComponent::canSelectFiles;
 
-    fileChooser->launchAsync(chooserFlags, [onFileSelected](const juce::FileChooser& fc) {
+  fileChooser->launchAsync(chooserFlags,
+                           [onFileSelected](const juce::FileChooser &fc) {
+                             auto file = fc.getResult();
+                             if (file.existsAsFile() && onFileSelected)
+                               onFileSelected(file);
+                           });
+}
+
+void AudioFileManager::showSaveDialog(
+    const juce::File &defaultPath,
+    std::function<void(const juce::File &)> onFileSelected) {
+  fileChooser = std::make_unique<juce::FileChooser>(TR("dialog.save_project"),
+                                                    defaultPath, "*.htpx");
+
+  auto chooserFlags = juce::FileBrowserComponent::saveMode |
+                      juce::FileBrowserComponent::canSelectFiles |
+                      juce::FileBrowserComponent::warnAboutOverwriting;
+
+  fileChooser->launchAsync(
+      chooserFlags, [onFileSelected](const juce::FileChooser &fc) {
         auto file = fc.getResult();
         if (file != juce::File{} && onFileSelected) {
-            auto finalFile = file.getFileExtension().isEmpty()
-                ? file.withFileExtension("htpx")
-                : file;
-            onFileSelected(finalFile);
+          auto finalFile = file.getFileExtension().isEmpty()
+                               ? file.withFileExtension("htpx")
+                               : file;
+          onFileSelected(finalFile);
         }
-    });
+      });
 }
 
-void AudioFileManager::showExportDialog(const juce::File& defaultPath,
-                                        std::function<void(const juce::File&)> onFileSelected) {
-    fileChooser = std::make_unique<juce::FileChooser>(TR("dialog.export_audio"), defaultPath, "*.wav");
+void AudioFileManager::showExportDialog(
+    const juce::File &defaultPath,
+    std::function<void(const juce::File &)> onFileSelected) {
+  fileChooser = std::make_unique<juce::FileChooser>(TR("dialog.export_audio"),
+                                                    defaultPath, "*.wav");
 
-    auto chooserFlags = juce::FileBrowserComponent::saveMode |
-                        juce::FileBrowserComponent::canSelectFiles |
-                        juce::FileBrowserComponent::warnAboutOverwriting;
+  auto chooserFlags = juce::FileBrowserComponent::saveMode |
+                      juce::FileBrowserComponent::canSelectFiles |
+                      juce::FileBrowserComponent::warnAboutOverwriting;
 
-    fileChooser->launchAsync(chooserFlags, [onFileSelected](const juce::FileChooser& fc) {
+  fileChooser->launchAsync(
+      chooserFlags, [onFileSelected](const juce::FileChooser &fc) {
         auto file = fc.getResult();
         if (file != juce::File{} && onFileSelected) {
-            auto finalFile = file.getFileExtension().isEmpty()
-                ? file.withFileExtension("wav")
-                : file;
-            onFileSelected(finalFile);
+          auto finalFile = file.getFileExtension().isEmpty()
+                               ? file.withFileExtension("wav")
+                               : file;
+          onFileSelected(finalFile);
         }
-    });
+      });
 }
 
-void AudioFileManager::loadAudioFileAsync(const juce::File& file,
+void AudioFileManager::loadAudioFileAsync(const juce::File &file,
                                           ProgressCallback onProgress,
                                           LoadCompleteCallback onComplete) {
-    if (isLoadingAudio.load())
-        return;
+  auto cancelFlag = std::make_shared<std::atomic<bool>>(false);
 
-    cancelFlag = false;
-    isLoadingAudio = true;
-
-    if (loaderThread.joinable())
-        loaderThread.join();
-
-    loaderThread = std::thread([this, file, onProgress, onComplete]() {
-        if (onProgress)
-            onProgress(0.05, TR("progress.loading_audio"));
-
-        juce::AudioFormatManager formatManager;
-        formatManager.registerBasicFormats();
-
-        std::unique_ptr<juce::AudioFormatReader> reader(formatManager.createReaderFor(file));
-        if (reader == nullptr || cancelFlag.load()) {
-            isLoadingAudio = false;
-            return;
-        }
-
-        const int numSamples = static_cast<int>(reader->lengthInSamples);
-        const int srcSampleRate = static_cast<int>(reader->sampleRate);
-
-        if (onProgress)
-            onProgress(0.10, TR("progress.reading_audio"));
-
-        // Read audio data
-        juce::AudioBuffer<float> buffer;
-        if (reader->numChannels == 1) {
-            buffer.setSize(1, numSamples);
-            reader->read(&buffer, 0, numSamples, 0, true, false);
-        } else {
-            juce::AudioBuffer<float> stereoBuffer(2, numSamples);
-            reader->read(&stereoBuffer, 0, numSamples, 0, true, true);
-            buffer = convertToMono(stereoBuffer);
-        }
-
-        if (cancelFlag.load()) {
-            isLoadingAudio = false;
-            return;
-        }
-
-        // Resample if needed
-        if (srcSampleRate != SAMPLE_RATE) {
-            if (onProgress)
-                onProgress(0.18, TR("progress.resampling"));
-            buffer = resampleIfNeeded(buffer, srcSampleRate, SAMPLE_RATE);
-        }
-
-        if (cancelFlag.load()) {
-            isLoadingAudio = false;
-            return;
-        }
-
-        if (onProgress)
-            onProgress(0.22, TR("progress.audio_loaded"));
-
-        isLoadingAudio = false;
-
-        // Call completion on message thread
-        juce::MessageManager::callAsync([onComplete, buffer = std::move(buffer), file]() mutable {
-            if (onComplete)
-                onComplete(std::move(buffer), SAMPLE_RATE, file);
-        });
-    });
+  {
+    std::lock_guard<std::mutex> lock(queueMutex);
+    loadQueue.push_back(LoadTask{file, std::move(onProgress),
+                                 std::move(onComplete), cancelFlag});
+  }
+  queueCv.notify_one();
 }
 
-void AudioFileManager::exportAudioFileAsync(const juce::File& file,
-                                            const juce::AudioBuffer<float>& buffer,
-                                            int sampleRate,
-                                            ProgressCallback onProgress,
-                                            ExportCompleteCallback onComplete) {
-    if (onProgress)
-        onProgress(0.0, TR("progress.exporting"));
+void AudioFileManager::exportAudioFileAsync(
+    const juce::File &file, const juce::AudioBuffer<float> &buffer,
+    int sampleRate, ProgressCallback onProgress,
+    ExportCompleteCallback onComplete) {
+  if (onProgress)
+    onProgress(0.0, TR("progress.exporting"));
 
-    // Export synchronously for now (could be made async if needed)
-    juce::WavAudioFormat wavFormat;
-    std::unique_ptr<juce::AudioFormatWriter> writer(
-        wavFormat.createWriterFor(new juce::FileOutputStream(file),
-                                  sampleRate,
-                                  static_cast<unsigned int>(buffer.getNumChannels()),
-                                  16, {}, 0));
+  // Export synchronously for now (could be made async if needed)
+  juce::WavAudioFormat wavFormat;
+  std::unique_ptr<juce::AudioFormatWriter> writer(wavFormat.createWriterFor(
+      new juce::FileOutputStream(file), sampleRate,
+      static_cast<unsigned int>(buffer.getNumChannels()), 16, {}, 0));
 
-    bool success = false;
-    if (writer) {
-        success = writer->writeFromAudioSampleBuffer(buffer, 0, buffer.getNumSamples());
-    }
+  bool success = false;
+  if (writer) {
+    success =
+        writer->writeFromAudioSampleBuffer(buffer, 0, buffer.getNumSamples());
+  }
 
-    if (onProgress)
-        onProgress(1.0, success ? TR("progress.export_complete") : TR("progress.export_failed"));
+  if (onProgress)
+    onProgress(1.0, success ? TR("progress.export_complete")
+                            : TR("progress.export_failed"));
 
-    if (onComplete)
-        onComplete(success);
+  if (onComplete)
+    onComplete(success);
 }
 
-bool AudioFileManager::isInterestedInFileDrag(const juce::StringArray& files) {
-    for (const auto& f : files) {
-        juce::File file(f);
-        auto ext = file.getFileExtension().toLowerCase();
-        if (ext == ".wav" || ext == ".mp3" || ext == ".flac" || ext == ".aiff" || ext == ".htpx")
-            return true;
-    }
-    return false;
+bool AudioFileManager::isInterestedInFileDrag(const juce::StringArray &files) {
+  for (const auto &f : files) {
+    juce::File file(f);
+    auto ext = file.getFileExtension().toLowerCase();
+    if (ext == ".wav" || ext == ".mp3" || ext == ".flac" || ext == ".aiff" ||
+        ext == ".htpx")
+      return true;
+  }
+  return false;
 }
 
-juce::File AudioFileManager::getFirstAudioFile(const juce::StringArray& files) {
-    for (const auto& f : files) {
-        juce::File file(f);
-        auto ext = file.getFileExtension().toLowerCase();
-        if (ext == ".wav" || ext == ".mp3" || ext == ".flac" || ext == ".aiff" || ext == ".htpx")
-            return file;
-    }
-    return {};
+juce::File AudioFileManager::getFirstAudioFile(const juce::StringArray &files) {
+  for (const auto &f : files) {
+    juce::File file(f);
+    auto ext = file.getFileExtension().toLowerCase();
+    if (ext == ".wav" || ext == ".mp3" || ext == ".flac" || ext == ".aiff" ||
+        ext == ".htpx")
+      return file;
+  }
+  return {};
 }
 
-juce::AudioBuffer<float> AudioFileManager::resampleIfNeeded(const juce::AudioBuffer<float>& buffer,
-                                                            int srcSampleRate,
-                                                            int targetSampleRate) {
-    if (srcSampleRate == targetSampleRate)
-        return buffer;
+juce::AudioBuffer<float>
+AudioFileManager::resampleIfNeeded(const juce::AudioBuffer<float> &buffer,
+                                   int srcSampleRate, int targetSampleRate) {
+  if (srcSampleRate == targetSampleRate)
+    return buffer;
 
-    const double ratio = static_cast<double>(srcSampleRate) / targetSampleRate;
-    const int numSamples = buffer.getNumSamples();
-    const int newNumSamples = static_cast<int>(numSamples / ratio);
+  const double ratio = static_cast<double>(srcSampleRate) / targetSampleRate;
+  const int numSamples = buffer.getNumSamples();
+  const int newNumSamples = static_cast<int>(numSamples / ratio);
 
-    juce::AudioBuffer<float> resampledBuffer(1, newNumSamples);
-    const float* src = buffer.getReadPointer(0);
-    float* dst = resampledBuffer.getWritePointer(0);
+  juce::AudioBuffer<float> resampledBuffer(1, newNumSamples);
+  const float *src = buffer.getReadPointer(0);
+  float *dst = resampledBuffer.getWritePointer(0);
 
-    for (int i = 0; i < newNumSamples; ++i) {
-        const double srcPos = i * ratio;
-        const int srcIndex = static_cast<int>(srcPos);
-        const double frac = srcPos - srcIndex;
+  for (int i = 0; i < newNumSamples; ++i) {
+    const double srcPos = i * ratio;
+    const int srcIndex = static_cast<int>(srcPos);
+    const double frac = srcPos - srcIndex;
 
-        if (srcIndex + 1 < numSamples)
-            dst[i] = static_cast<float>(src[srcIndex] * (1.0 - frac) + src[srcIndex + 1] * frac);
-        else
-            dst[i] = src[srcIndex];
-    }
+    if (srcIndex + 1 < numSamples)
+      dst[i] = static_cast<float>(src[srcIndex] * (1.0 - frac) +
+                                  src[srcIndex + 1] * frac);
+    else
+      dst[i] = src[srcIndex];
+  }
 
-    return resampledBuffer;
+  return resampledBuffer;
 }
 
-juce::AudioBuffer<float> AudioFileManager::convertToMono(const juce::AudioBuffer<float>& stereoBuffer) {
-    const int numSamples = stereoBuffer.getNumSamples();
-    juce::AudioBuffer<float> monoBuffer(1, numSamples);
+juce::AudioBuffer<float>
+AudioFileManager::convertToMono(const juce::AudioBuffer<float> &stereoBuffer) {
+  const int numSamples = stereoBuffer.getNumSamples();
+  juce::AudioBuffer<float> monoBuffer(1, numSamples);
 
-    const float* left = stereoBuffer.getReadPointer(0);
-    const float* right = stereoBuffer.getReadPointer(1);
-    float* mono = monoBuffer.getWritePointer(0);
+  const float *left = stereoBuffer.getReadPointer(0);
+  const float *right = stereoBuffer.getReadPointer(1);
+  float *mono = monoBuffer.getWritePointer(0);
 
-    for (int i = 0; i < numSamples; ++i)
-        mono[i] = (left[i] + right[i]) * 0.5f;
+  for (int i = 0; i < numSamples; ++i)
+    mono[i] = (left[i] + right[i]) * 0.5f;
 
-    return monoBuffer;
+  return monoBuffer;
 }

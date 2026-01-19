@@ -9,8 +9,8 @@
 #include "../Utils/PitchCurveProcessor.h"
 #include "../Utils/PlatformPaths.h"
 #include <atomic>
-#include <iostream>
 #include <climits>
+#include <iostream>
 
 MainComponent::MainComponent(bool enableAudioDevice)
     : enableAudioDeviceFlag(enableAudioDevice) {
@@ -140,7 +140,9 @@ MainComponent::MainComponent(bool enableAudioDevice)
   menuHandler->onUndo = [this]() { undo(); };
   menuHandler->onRedo = [this]() { redo(); };
   menuHandler->onShowSettings = [this]() { showSettings(); };
-  menuHandler->onQuit = [this]() { juce::JUCEApplication::getInstance()->systemRequestedQuit(); };
+  menuHandler->onQuit = [this]() {
+    juce::JUCEApplication::getInstance()->systemRequestedQuit();
+  };
 
   // View menu callbacks
   menuHandler->setShowDeltaPitch(settingsManager->getShowDeltaPitch());
@@ -176,8 +178,10 @@ MainComponent::MainComponent(bool enableAudioDevice)
 
   // Add parameter panel to workspace sidebar
   // SVG icon for parameters panel (mixer faders)
-  const juce::String paramIconSvg = R"(<svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="2" width="2" height="20" rx="1"/><circle cx="4" cy="9" r="3"/><rect x="11" y="2" width="2" height="20" rx="1"/><circle cx="12" cy="15" r="3"/><rect x="19" y="2" width="2" height="20" rx="1"/><circle cx="20" cy="6" r="3"/></svg>)";
-  workspace.addPanel("parameters", TR("panel.parameters"), paramIconSvg, &parameterPanel, true);
+  const juce::String paramIconSvg =
+      R"(<svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="2" width="2" height="20" rx="1"/><circle cx="4" cy="9" r="3"/><rect x="11" y="2" width="2" height="20" rx="1"/><circle cx="12" cy="15" r="3"/><rect x="19" y="2" width="2" height="20" rx="1"/><circle cx="20" cy="6" r="3"/></svg>)";
+  workspace.addPanel("parameters", TR("panel.parameters"), paramIconSvg,
+                     &parameterPanel, true);
 
   // Configure toolbar for plugin mode
   if (isPluginMode())
@@ -245,17 +249,21 @@ MainComponent::MainComponent(bool enableAudioDevice)
 
   // Setup audio engine callbacks
   if (audioEngine) {
-    audioEngine->setPositionCallback([this](double position) {
+    juce::Component::SafePointer<MainComponent> safeThis(this);
+
+    audioEngine->setPositionCallback([safeThis](double position) {
+      if (safeThis == nullptr)
+        return;
       // Throttle cursor updates - store position and let timer handle it
-      pendingCursorTime.store(position);
-      hasPendingCursorUpdate.store(true);
+      safeThis->pendingCursorTime.store(position);
+      safeThis->hasPendingCursorUpdate.store(true);
     });
 
-    audioEngine->setFinishCallback([this]() {
-      juce::MessageManager::callAsync([this]() {
-        isPlaying = false;
-        toolbar.setPlaying(false);
-      });
+    audioEngine->setFinishCallback([safeThis]() {
+      if (safeThis == nullptr)
+        return;
+      safeThis->isPlaying = false;
+      safeThis->toolbar.setPlaying(false);
     });
   }
 
@@ -289,6 +297,10 @@ MainComponent::~MainComponent() {
   cancelLoading = true;
   if (loaderThread.joinable())
     loaderThread.join();
+
+  cancelRender = true;
+  if (renderThread.joinable())
+    renderThread.join();
 
   if (audioEngine) {
     audioEngine->clearCallbacks();
@@ -472,16 +484,22 @@ void MainComponent::saveProject() {
           juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
               .getChildFile("Untitled.htpx");
 
-    fileChooser = std::make_unique<juce::FileChooser>(TR("dialog.save_project"), target,
-                                                      "*.htpx");
+    fileChooser = std::make_unique<juce::FileChooser>(TR("dialog.save_project"),
+                                                      target, "*.htpx");
 
     auto chooserFlags = juce::FileBrowserComponent::saveMode |
                         juce::FileBrowserComponent::canSelectFiles |
                         juce::FileBrowserComponent::warnAboutOverwriting;
 
-    fileChooser->launchAsync(chooserFlags, [this](const juce::FileChooser &fc) {
+    juce::Component::SafePointer<MainComponent> safeThis(this);
+    fileChooser->launchAsync(chooserFlags, [safeThis](
+                                               const juce::FileChooser &fc) {
+      if (safeThis == nullptr)
+        return;
+
       auto file = fc.getResult();
-      fileChooser.reset();  // Allow next dialog to open (must be after getResult)
+      safeThis->fileChooser
+          .reset(); // Allow next dialog to open (must be after getResult)
 
       if (file == juce::File{})
         return;
@@ -489,14 +507,14 @@ void MainComponent::saveProject() {
       if (file.getFileExtension().isEmpty())
         file = file.withFileExtension("htpx");
 
-      toolbar.showProgress(TR("progress.saving"));
-      toolbar.setProgress(-1.0f);
+      safeThis->toolbar.showProgress(TR("progress.saving"));
+      safeThis->toolbar.setProgress(-1.0f);
 
-      const bool ok = ProjectSerializer::saveToFile(*project, file);
+      const bool ok = ProjectSerializer::saveToFile(*safeThis->project, file);
       if (ok)
-        project->setProjectFilePath(file);
+        safeThis->project->setProjectFilePath(file);
 
-      toolbar.hideProgress();
+      safeThis->toolbar.hideProgress();
     });
 
     return;
@@ -522,13 +540,18 @@ void MainComponent::openFile() {
   auto chooserFlags = juce::FileBrowserComponent::openMode |
                       juce::FileBrowserComponent::canSelectFiles;
 
-  fileChooser->launchAsync(chooserFlags, [this](const juce::FileChooser &fc) {
-    auto file = fc.getResult();
-    fileChooser.reset();  // Allow next dialog to open
-    if (file.existsAsFile()) {
-      loadAudioFile(file);
-    }
-  });
+  juce::Component::SafePointer<MainComponent> safeThis(this);
+  fileChooser->launchAsync(
+      chooserFlags, [safeThis](const juce::FileChooser &fc) {
+        if (safeThis == nullptr)
+          return;
+
+        auto file = fc.getResult();
+        safeThis->fileChooser.reset(); // Allow next dialog to open
+        if (file.existsAsFile()) {
+          safeThis->loadAudioFile(file);
+        }
+      });
 }
 
 void MainComponent::loadAudioFile(const juce::File &file) {
@@ -548,13 +571,17 @@ void MainComponent::loadAudioFile(const juce::File &file) {
   if (loaderThread.joinable())
     loaderThread.join();
 
-  loaderThread = std::thread([this, file]() {
-    juce::Component::SafePointer<MainComponent> safeThis(this);
+  juce::Component::SafePointer<MainComponent> safeThis(this);
+  loaderThread = std::thread([safeThis, file]() {
+    if (safeThis == nullptr)
+      return;
 
-    auto updateProgress = [this](double p, const juce::String &msg) {
-      loadingProgress = juce::jlimit(0.0, 1.0, p);
-      const juce::ScopedLock sl(loadingMessageLock);
-      loadingMessage = msg;
+    auto updateProgress = [safeThis](double p, const juce::String &msg) {
+      if (safeThis == nullptr)
+        return;
+      safeThis->loadingProgress = juce::jlimit(0.0, 1.0, p);
+      const juce::ScopedLock sl(safeThis->loadingMessageLock);
+      safeThis->loadingMessage = msg;
     };
 
     updateProgress(0.05, TR("progress.loading_audio"));
@@ -564,7 +591,7 @@ void MainComponent::loadAudioFile(const juce::File &file) {
 
     std::unique_ptr<juce::AudioFormatReader> reader(
         formatManager.createReaderFor(file));
-    if (reader == nullptr || cancelLoading.load()) {
+    if (reader == nullptr || safeThis->cancelLoading.load()) {
       juce::MessageManager::callAsync([safeThis]() {
         if (safeThis != nullptr)
           safeThis->isLoadingAudio = false;
@@ -593,7 +620,7 @@ void MainComponent::loadAudioFile(const juce::File &file) {
         mono[i] = (left[i] + right[i]) * 0.5f;
     }
 
-    if (cancelLoading.load()) {
+    if (safeThis->cancelLoading.load()) {
       juce::MessageManager::callAsync([safeThis]() {
         if (safeThis != nullptr)
           safeThis->isLoadingAudio = false;
@@ -633,7 +660,7 @@ void MainComponent::loadAudioFile(const juce::File &file) {
     audioData.waveform = std::move(buffer);
     audioData.sampleRate = SAMPLE_RATE;
 
-    if (cancelLoading.load()) {
+    if (safeThis->cancelLoading.load()) {
       juce::MessageManager::callAsync([safeThis]() {
         if (safeThis != nullptr)
           safeThis->isLoadingAudio = false;
@@ -642,9 +669,9 @@ void MainComponent::loadAudioFile(const juce::File &file) {
     }
 
     updateProgress(0.25, TR("progress.analyzing_audio"));
-    analyzeAudio(*newProject, updateProgress);
+    safeThis->analyzeAudio(*newProject, updateProgress);
 
-    if (cancelLoading.load()) {
+    if (safeThis->cancelLoading.load()) {
       juce::MessageManager::callAsync([safeThis]() {
         if (safeThis != nullptr)
           safeThis->isLoadingAudio = false;
@@ -832,9 +859,14 @@ void MainComponent::analyzeAudio(
   // Get pitch detector type from settings
   PitchDetectorType detectorType = settingsManager->getPitchDetectorType();
   LOG("========== PITCH DETECTOR SELECTION ==========");
-  LOG("Selected detector: " + juce::String(pitchDetectorTypeToString(detectorType)));
-  LOG("RMVPE loaded: " + juce::String(rmvpePitchDetector && rmvpePitchDetector->isLoaded() ? "YES" : "NO"));
-  LOG("FCPE loaded: " + juce::String(fcpePitchDetector && fcpePitchDetector->isLoaded() ? "YES" : "NO"));
+  LOG("Selected detector: " +
+      juce::String(pitchDetectorTypeToString(detectorType)));
+  LOG("RMVPE loaded: " +
+      juce::String(
+          rmvpePitchDetector && rmvpePitchDetector->isLoaded() ? "YES" : "NO"));
+  LOG("FCPE loaded: " +
+      juce::String(fcpePitchDetector && fcpePitchDetector->isLoaded() ? "YES"
+                                                                      : "NO"));
 
   // Extract F0 based on selected detector type
   std::vector<float> extractedF0;
@@ -842,13 +874,17 @@ void MainComponent::analyzeAudio(
   bool isFallback = false;
 
   // Try selected detector first
-  if (detectorType == PitchDetectorType::RMVPE && rmvpePitchDetector && rmvpePitchDetector->isLoaded()) {
+  if (detectorType == PitchDetectorType::RMVPE && rmvpePitchDetector &&
+      rmvpePitchDetector->isLoaded()) {
     LOG(">>> USING RMVPE (selected)");
-    extractedF0 = rmvpePitchDetector->extractF0(samples, numSamples, SAMPLE_RATE);
+    extractedF0 =
+        rmvpePitchDetector->extractF0(samples, numSamples, SAMPLE_RATE);
     useNeuralDetector = true;
-  } else if (detectorType == PitchDetectorType::FCPE && fcpePitchDetector && fcpePitchDetector->isLoaded()) {
+  } else if (detectorType == PitchDetectorType::FCPE && fcpePitchDetector &&
+             fcpePitchDetector->isLoaded()) {
     LOG(">>> USING FCPE (selected)");
-    extractedF0 = fcpePitchDetector->extractF0(samples, numSamples, SAMPLE_RATE);
+    extractedF0 =
+        fcpePitchDetector->extractF0(samples, numSamples, SAMPLE_RATE);
     useNeuralDetector = true;
   } else {
     LOG("WARNING: Selected detector not available!");
@@ -863,26 +899,30 @@ void MainComponent::analyzeAudio(
     isFallback = true;
     if (rmvpePitchDetector && rmvpePitchDetector->isLoaded()) {
       LOG(">>> FALLBACK: Using RMVPE");
-      extractedF0 = rmvpePitchDetector->extractF0(samples, numSamples, SAMPLE_RATE);
+      extractedF0 =
+          rmvpePitchDetector->extractF0(samples, numSamples, SAMPLE_RATE);
       useNeuralDetector = true;
     } else if (fcpePitchDetector && fcpePitchDetector->isLoaded()) {
       LOG(">>> FALLBACK: Using FCPE");
-      extractedF0 = fcpePitchDetector->extractF0(samples, numSamples, SAMPLE_RATE);
+      extractedF0 =
+          fcpePitchDetector->extractF0(samples, numSamples, SAMPLE_RATE);
       useNeuralDetector = true;
     }
   }
 
-  LOG("Final: useNeuralDetector=" + juce::String(useNeuralDetector ? "YES" : "NO") +
+  LOG("Final: useNeuralDetector=" +
+      juce::String(useNeuralDetector ? "YES" : "NO") +
       ", isFallback=" + juce::String(isFallback ? "YES" : "NO"));
   LOG("==============================================");
 
   if (useNeuralDetector && !extractedF0.empty() && targetFrames > 0) {
-    // Resample neural F0 (100 fps @ 16kHz) to vocoder frame rate (86.1 fps @ 44.1kHz)
+    // Resample neural F0 (100 fps @ 16kHz) to vocoder frame rate (86.1 fps
+    // @ 44.1kHz)
     audioData.f0.resize(targetFrames);
 
     // Time per frame for each system
-    const double neuralFrameTime = 160.0 / 16000.0;    // 0.01 seconds
-    const double vocoderFrameTime = 512.0 / 44100.0;   // ~0.01161 seconds
+    const double neuralFrameTime = 160.0 / 16000.0;  // 0.01 seconds
+    const double vocoderFrameTime = 512.0 / 44100.0; // ~0.01161 seconds
 
     for (int i = 0; i < targetFrames; ++i) {
       double vocoderTime = i * vocoderFrameTime;
@@ -980,48 +1020,53 @@ void MainComponent::exportFile() {
                       juce::FileBrowserComponent::canSelectFiles |
                       juce::FileBrowserComponent::warnAboutOverwriting;
 
-  fileChooser->launchAsync(chooserFlags, [this](const juce::FileChooser &fc) {
+  juce::Component::SafePointer<MainComponent> safeThis(this);
+  fileChooser->launchAsync(chooserFlags, [safeThis](
+                                             const juce::FileChooser &fc) {
+    if (safeThis == nullptr)
+      return;
+
     // Get result and reset fileChooser to allow next dialog
     auto file = fc.getResult();
-    fileChooser.reset();
+    safeThis->fileChooser.reset();
 
     if (file == juce::File{})
       return;
 
-    auto &audioData = project->getAudioData();
+    auto &audioData = safeThis->project->getAudioData();
 
     // Show progress
-    toolbar.showProgress(TR("progress.exporting_audio"));
-    toolbar.setProgress(0.0f);
+    safeThis->toolbar.showProgress(TR("progress.exporting_audio"));
+    safeThis->toolbar.setProgress(0.0f);
 
     // Delete existing file if it exists (to ensure clean replacement)
     if (file.existsAsFile()) {
       if (!file.deleteFile()) {
-        toolbar.hideProgress();
-        StyledMessageBox::show(this, TR("dialog.export_failed"),
-                               TR("dialog.failed_delete") + "\n" +
-                                   file.getFullPathName(),
-                               StyledMessageBox::WarningIcon);
+        safeThis->toolbar.hideProgress();
+        StyledMessageBox::show(
+            safeThis.getComponent(), TR("dialog.export_failed"),
+            TR("dialog.failed_delete") + "\n" + file.getFullPathName(),
+            StyledMessageBox::WarningIcon);
         return;
       }
     }
 
-    toolbar.setProgress(0.3f);
+    safeThis->toolbar.setProgress(0.3f);
 
     // Create output stream
     std::unique_ptr<juce::FileOutputStream> outputStream =
         std::make_unique<juce::FileOutputStream>(file);
 
     if (!outputStream->openedOk()) {
-      toolbar.hideProgress();
-      StyledMessageBox::show(this, TR("dialog.export_failed"),
-                             TR("dialog.failed_open") + "\n" +
-                                 file.getFullPathName(),
-                             StyledMessageBox::WarningIcon);
+      safeThis->toolbar.hideProgress();
+      StyledMessageBox::show(
+          safeThis.getComponent(), TR("dialog.export_failed"),
+          TR("dialog.failed_open") + "\n" + file.getFullPathName(),
+          StyledMessageBox::WarningIcon);
       return;
     }
 
-    toolbar.setProgress(0.5f);
+    safeThis->toolbar.setProgress(0.5f);
 
     // Create writer
     juce::WavAudioFormat wavFormat;
@@ -1033,41 +1078,41 @@ void MainComponent::exportFile() {
         {}, 0));
 
     if (writer == nullptr) {
-      toolbar.hideProgress();
-      StyledMessageBox::show(this, TR("dialog.export_failed"),
-                             TR("dialog.failed_create_writer") + "\n" +
-                                 file.getFullPathName(),
-                             StyledMessageBox::WarningIcon);
+      safeThis->toolbar.hideProgress();
+      StyledMessageBox::show(
+          safeThis.getComponent(), TR("dialog.export_failed"),
+          TR("dialog.failed_create_writer") + "\n" + file.getFullPathName(),
+          StyledMessageBox::WarningIcon);
       return;
     }
 
-    toolbar.setProgress(0.7f);
+    safeThis->toolbar.setProgress(0.7f);
 
     // Write audio data
     bool writeSuccess = writer->writeFromAudioSampleBuffer(
         audioData.waveform, 0, audioData.waveform.getNumSamples());
 
-    toolbar.setProgress(0.9f);
+    safeThis->toolbar.setProgress(0.9f);
 
     // Explicitly flush and close writer (destructor will also do this, but
     // explicit is better)
     writer->flush();
     writer.reset(); // Explicitly release writer and underlying stream
 
-    toolbar.setProgress(1.0f);
+    safeThis->toolbar.setProgress(1.0f);
 
     if (writeSuccess) {
-      toolbar.hideProgress();
-      StyledMessageBox::show(this, TR("dialog.export_complete"),
-                             TR("dialog.audio_exported") + "\n" +
-                                 file.getFullPathName(),
-                             StyledMessageBox::InfoIcon);
+      safeThis->toolbar.hideProgress();
+      StyledMessageBox::show(
+          safeThis.getComponent(), TR("dialog.export_complete"),
+          TR("dialog.audio_exported") + "\n" + file.getFullPathName(),
+          StyledMessageBox::InfoIcon);
     } else {
-      toolbar.hideProgress();
-      StyledMessageBox::show(this, TR("dialog.export_failed"),
-                             TR("dialog.failed_write") + "\n" +
-                                 file.getFullPathName(),
-                             StyledMessageBox::WarningIcon);
+      safeThis->toolbar.hideProgress();
+      StyledMessageBox::show(
+          safeThis.getComponent(), TR("dialog.export_failed"),
+          TR("dialog.failed_write") + "\n" + file.getFullPathName(),
+          StyledMessageBox::WarningIcon);
     }
   });
 }
@@ -1080,7 +1125,7 @@ void MainComponent::exportMidiFile() {
   if (fileChooser != nullptr)
     return;
 
-  const auto& notes = project->getNotes();
+  const auto &notes = project->getNotes();
   if (notes.empty()) {
     StyledMessageBox::show(this, TR("dialog.export_failed"),
                            TR("dialog.no_notes_to_export"),
@@ -1103,46 +1148,55 @@ void MainComponent::exportMidiFile() {
                       juce::FileBrowserComponent::canSelectFiles |
                       juce::FileBrowserComponent::warnAboutOverwriting;
 
-  fileChooser->launchAsync(chooserFlags, [this](const juce::FileChooser& fc) {
-    auto file = fc.getResult();
-    fileChooser.reset();  // Allow next dialog to open (must be after getResult)
+  juce::Component::SafePointer<MainComponent> safeThis(this);
+  fileChooser->launchAsync(
+      chooserFlags, [safeThis](const juce::FileChooser &fc) {
+        if (safeThis == nullptr)
+          return;
 
-    if (file == juce::File{})
-      return;
+        auto file = fc.getResult();
+        safeThis->fileChooser
+            .reset(); // Allow next dialog to open (must be after getResult)
 
-    // Ensure .mid extension
-    if (file.getFileExtension().isEmpty())
-      file = file.withFileExtension("mid");
+        if (file == juce::File{})
+          return;
 
-    // Show progress
-    toolbar.showProgress(TR("progress.exporting_midi"));
-    toolbar.setProgress(0.3f);
+        // Ensure .mid extension
+        if (file.getFileExtension().isEmpty())
+          file = file.withFileExtension("mid");
 
-    // Configure export options
-    MidiExporter::ExportOptions options;
-    options.tempo = 120.0f;           // Default BPM
-    options.ticksPerQuarterNote = 480;
-    options.velocity = 100;
-    options.quantizePitch = true;     // Round to nearest semitone
+        // Show progress
+        safeThis->toolbar.showProgress(TR("progress.exporting_midi"));
+        safeThis->toolbar.setProgress(0.3f);
 
-    toolbar.setProgress(0.6f);
+        // Configure export options
+        MidiExporter::ExportOptions options;
+        options.tempo = 120.0f; // Default BPM
+        options.ticksPerQuarterNote = 480;
+        options.velocity = 100;
+        options.quantizePitch = true; // Round to nearest semitone
 
-    // Export using adjusted pitch data (includes user edits)
-    bool success = MidiExporter::exportToFile(project->getNotes(), file, options);
+        safeThis->toolbar.setProgress(0.6f);
 
-    toolbar.setProgress(1.0f);
-    toolbar.hideProgress();
+        // Export using adjusted pitch data (includes user edits)
+        bool success = MidiExporter::exportToFile(safeThis->project->getNotes(),
+                                                  file, options);
 
-    if (success) {
-      StyledMessageBox::show(this, TR("dialog.export_complete"),
-                             TR("dialog.midi_exported") + "\n" + file.getFullPathName(),
-                             StyledMessageBox::InfoIcon);
-    } else {
-      StyledMessageBox::show(this, TR("dialog.export_failed"),
-                             TR("dialog.failed_write_midi") + "\n" + file.getFullPathName(),
-                             StyledMessageBox::WarningIcon);
-    }
-  });
+        safeThis->toolbar.setProgress(1.0f);
+        safeThis->toolbar.hideProgress();
+
+        if (success) {
+          StyledMessageBox::show(
+              safeThis.getComponent(), TR("dialog.export_complete"),
+              TR("dialog.midi_exported") + "\n" + file.getFullPathName(),
+              StyledMessageBox::InfoIcon);
+        } else {
+          StyledMessageBox::show(
+              safeThis.getComponent(), TR("dialog.export_failed"),
+              TR("dialog.failed_write_midi") + "\n" + file.getFullPathName(),
+              StyledMessageBox::WarningIcon);
+        }
+      });
 }
 
 void MainComponent::play() {
@@ -1227,7 +1281,8 @@ void MainComponent::seek(double time) {
 
   // Scroll view to make cursor visible
   float cursorX = static_cast<float>(time * pianoRoll.getPixelsPerSecond());
-  float viewWidth = static_cast<float>(pianoRoll.getWidth() - 74); // minus piano keys and scrollbar
+  float viewWidth = static_cast<float>(pianoRoll.getWidth() -
+                                       74); // minus piano keys and scrollbar
   float scrollX = static_cast<float>(pianoRoll.getScrollX());
 
   // If cursor is outside visible area, scroll to show it
@@ -1237,7 +1292,8 @@ void MainComponent::seek(double time) {
     if (time < 0.001) {
       newScrollX = 0.0; // Go to start
     } else {
-      newScrollX = std::max(0.0, static_cast<double>(cursorX - viewWidth * 0.3));
+      newScrollX =
+          std::max(0.0, static_cast<double>(cursorX - viewWidth * 0.3));
     }
     pianoRoll.setScrollX(newScrollX);
   }
@@ -1248,6 +1304,15 @@ void MainComponent::resynthesizeIncremental() {
 
   if (!project) {
     DBG("  Skipped: no project");
+    return;
+  }
+
+  // If a synthesis is already running, cancel it and coalesce to a single
+  // rerun.
+  if (incrementalSynth && incrementalSynth->isSynthesizing()) {
+    DBG("  Coalescing: synthesis in progress, cancelling and scheduling rerun");
+    pendingIncrementalResynth.store(true);
+    incrementalSynth->cancel();
     return;
   }
 
@@ -1281,9 +1346,12 @@ void MainComponent::resynthesizeIncremental() {
   incrementalSynth->setProject(project.get());
   incrementalSynth->setVocoder(vocoder.get());
 
+  // We're starting a new synthesis run; clear any previously pending rerun.
+  pendingIncrementalResynth.store(false);
+
   // Show progress during synthesis
   toolbar.showProgress(TR("progress.synthesizing"));
-  toolbar.setProgress(-1.0f);  // Indeterminate progress
+  toolbar.setProgress(-1.0f); // Indeterminate progress
 
   // Disable toolbar during synthesis
   toolbar.setEnabled(false);
@@ -1300,28 +1368,39 @@ void MainComponent::resynthesizeIncremental() {
   // Run synthesis (expands to silence boundaries, no padding, no crossfade)
   incrementalSynth->synthesizeRegion(
       // Progress callback
-      [safeThis](const juce::String& message) {
-        if (safeThis == nullptr) return;
+      [safeThis](const juce::String &message) {
+        if (safeThis == nullptr)
+          return;
         safeThis->toolbar.showProgress(message);
       },
       // Complete callback
       [safeThis, audioEnginePtr](bool success) {
-        if (safeThis == nullptr) return;
+        if (safeThis == nullptr)
+          return;
 
         safeThis->toolbar.setEnabled(true);
         safeThis->toolbar.hideProgress();
 
         if (!success) {
           DBG("resynthesizeIncremental: Synthesis failed or was cancelled");
+
+          if (safeThis->pendingIncrementalResynth.exchange(false)) {
+            juce::MessageManager::callAsync([safeThis]() {
+              if (safeThis != nullptr)
+                safeThis->resynthesizeIncremental();
+            });
+          }
           return;
         }
 
         // Reload waveform in audio engine (standalone mode only)
         if (audioEnginePtr && !safeThis->isPluginMode()) {
-          if (safeThis->audioEngine && safeThis->audioEngine.get() == audioEnginePtr) {
-            auto& audioData = safeThis->project->getAudioData();
+          if (safeThis->audioEngine &&
+              safeThis->audioEngine.get() == audioEnginePtr) {
+            auto &audioData = safeThis->project->getAudioData();
             try {
-              audioEnginePtr->loadWaveform(audioData.waveform, audioData.sampleRate, true);
+              audioEnginePtr->loadWaveform(audioData.waveform,
+                                           audioData.sampleRate, true);
             } catch (...) {
               DBG("resynthesizeIncremental: EXCEPTION in loadWaveform!");
             }
@@ -1334,6 +1413,15 @@ void MainComponent::resynthesizeIncremental() {
         // Notify plugin mode that project data changed
         if (safeThis->isPluginMode() && safeThis->onProjectDataChanged)
           safeThis->onProjectDataChanged();
+
+        // If edits happened during synthesis, run one more time for the latest
+        // state.
+        if (safeThis->pendingIncrementalResynth.exchange(false)) {
+          juce::MessageManager::callAsync([safeThis]() {
+            if (safeThis != nullptr)
+              safeThis->resynthesizeIncremental();
+          });
+        }
       });
 }
 
@@ -1365,7 +1453,7 @@ void MainComponent::undo() {
 
   if (undoManager && undoManager->canUndo()) {
     undoManager->undo();
-    pianoRoll.invalidateBasePitchCache();  // Refresh cache after note split etc.
+    pianoRoll.invalidateBasePitchCache(); // Refresh cache after note split etc.
     pianoRoll.repaint();
 
     if (project) {
@@ -1380,7 +1468,7 @@ void MainComponent::undo() {
 void MainComponent::redo() {
   if (undoManager && undoManager->canRedo()) {
     undoManager->redo();
-    pianoRoll.invalidateBasePitchCache();  // Refresh cache after note split etc.
+    pianoRoll.invalidateBasePitchCache(); // Refresh cache after note split etc.
     pianoRoll.repaint();
 
     if (project) {
@@ -1441,6 +1529,8 @@ void MainComponent::segmentIntoNotes(Project &targetProject) {
   auto &notes = targetProject.getNotes();
   notes.clear();
 
+  juce::Component::SafePointer<MainComponent> safeThis(this);
+
   if (audioData.f0.empty())
     return;
 
@@ -1477,7 +1567,8 @@ void MainComponent::segmentIntoNotes(Project &targetProject) {
               continue;
 
             // Use SOME's predicted MIDI value directly for note position
-            // Delta pitch (from RMVPE/FCPE F0) will capture the pitch curve details
+            // Delta pitch (from RMVPE/FCPE F0) will capture the pitch curve
+            // details
             Note note(f0Start, f0End, someNote.midiNote);
             std::vector<float> f0Values(audioData.f0.begin() + f0Start,
                                         audioData.f0.begin() + f0End);
@@ -1486,10 +1577,12 @@ void MainComponent::segmentIntoNotes(Project &targetProject) {
           }
 
           // Update UI on main thread
-          juce::MessageManager::callAsync([this]() {
-            pianoRoll
+          juce::MessageManager::callAsync([safeThis]() {
+            if (safeThis == nullptr)
+              return;
+            safeThis->pianoRoll
                 .invalidateBasePitchCache(); // Regenerate smoothed base pitch
-            pianoRoll.repaint();
+            safeThis->pianoRoll.repaint();
           });
         },
         nullptr // progress callback
@@ -1621,9 +1714,10 @@ void MainComponent::showSettings() {
     settingsDialog->getSettingsComponent()->onSettingsChanged = [this]() {
       settingsManager->applySettings();
     };
-    settingsDialog->getSettingsComponent()->onPitchDetectorChanged = [this](PitchDetectorType type) {
-      audioAnalyzer->setPitchDetectorType(type);
-    };
+    settingsDialog->getSettingsComponent()->onPitchDetectorChanged =
+        [this](PitchDetectorType type) {
+          audioAnalyzer->setPitchDetectorType(type);
+        };
   }
 
   settingsDialog->setVisible(true);
@@ -1846,74 +1940,78 @@ void MainComponent::renderProcessedAudio() {
   // Show progress
   toolbar.showProgress(TR("progress.rendering"));
 
-  // Use SafePointer to prevent accessing destroyed component
+  // Cancel any previous render and wait for it
+  cancelRender = true;
+  if (renderThread.joinable())
+    renderThread.join();
+  cancelRender = false;
+
+  // Snapshot required data to avoid accessing Project concurrently from the
+  // background thread
+  if (!project || !vocoder) {
+    toolbar.hideProgress();
+    return;
+  }
+
+  auto f0Snapshot = project->getAudioData().f0;
+  auto voicedMaskSnapshot = project->getAudioData().voicedMask;
+  auto melSpecSnapshot = project->getAudioData().melSpectrogram;
+  const float globalOffset = project->getGlobalPitchOffset();
+  const int numChannels = originalWaveform.getNumChannels();
+  Vocoder *voc = vocoder.get();
+  auto onChanged = onProjectDataChanged;
+
   juce::Component::SafePointer<MainComponent> safeThis(this);
 
-  // Run synthesis in background thread
-  std::thread([safeThis]() {
-    if (safeThis == nullptr)
-      return;
+  renderThread =
+      std::thread([this, safeThis, f0Snapshot = std::move(f0Snapshot),
+                   voicedMaskSnapshot = std::move(voicedMaskSnapshot),
+                   melSpecSnapshot = std::move(melSpecSnapshot), globalOffset,
+                   numChannels, voc, onChanged]() mutable {
+        if (safeThis == nullptr)
+          return;
 
-    // Resynthesize with current edits
-    auto &f0Array = safeThis->project->getAudioData().f0;
-    auto &voicedMask = safeThis->project->getAudioData().voicedMask;
+        if (cancelRender.load())
+          return;
 
-    if (f0Array.empty()) {
-      juce::MessageManager::callAsync([safeThis]() {
-        if (safeThis != nullptr)
-          safeThis->toolbar.hideProgress();
-      });
-      return;
-    }
-
-    // Apply global pitch offset
-    std::vector<float> modifiedF0 = f0Array;
-    float globalOffset = safeThis->project->getGlobalPitchOffset();
-    for (size_t i = 0; i < modifiedF0.size(); ++i) {
-      if (voicedMask[i] && modifiedF0[i] > 0)
-        modifiedF0[i] *= std::pow(2.0f, globalOffset / 12.0f);
-    }
-
-    // Get mel spectrogram
-    auto &melSpec = safeThis->project->getAudioData().melSpectrogram;
-    if (melSpec.empty()) {
-      juce::MessageManager::callAsync([safeThis]() {
-        if (safeThis != nullptr)
-          safeThis->toolbar.hideProgress();
-      });
-      return;
-    }
-
-    // Synthesize
-    auto synthesized = safeThis->vocoder->infer(melSpec, modifiedF0);
-
-    if (!synthesized.empty()) {
-      // Create output buffer
-      juce::AudioBuffer<float> outputBuffer(
-          safeThis->originalWaveform.getNumChannels(),
-          static_cast<int>(synthesized.size()));
-
-      // Copy to all channels
-      for (int ch = 0; ch < outputBuffer.getNumChannels(); ++ch) {
-        for (int i = 0; i < outputBuffer.getNumSamples(); ++i)
-          outputBuffer.setSample(ch, i, synthesized[i]);
-      }
-
-      juce::MessageManager::callAsync([safeThis]() {
-        if (safeThis != nullptr) {
-          safeThis->toolbar.hideProgress();
-          // Melodyne-style: trigger real-time processor update instead of
-          // manual render The real-time processor will handle playback
-          // automatically
-          if (safeThis->onProjectDataChanged)
-            safeThis->onProjectDataChanged();
+        if (f0Snapshot.empty() || melSpecSnapshot.empty()) {
+          juce::MessageManager::callAsync([safeThis]() {
+            if (safeThis != nullptr)
+              safeThis->toolbar.hideProgress();
+          });
+          return;
         }
+
+        if (voicedMaskSnapshot.size() < f0Snapshot.size())
+          voicedMaskSnapshot.resize(f0Snapshot.size(), true);
+
+        // Apply global pitch offset
+        for (size_t i = 0; i < f0Snapshot.size(); ++i) {
+          if (cancelRender.load())
+            return;
+          if (voicedMaskSnapshot[i] && f0Snapshot[i] > 0)
+            f0Snapshot[i] *= std::pow(2.0f, globalOffset / 12.0f);
+        }
+
+        if (cancelRender.load())
+          return;
+
+        // Synthesize
+        auto synthesized = voc ? voc->infer(melSpecSnapshot, f0Snapshot)
+                               : std::vector<float>{};
+
+        if (cancelRender.load())
+          return;
+
+        // (Output buffer currently not propagated; we keep behavior: just
+        // notify + hide progress)
+        juce::MessageManager::callAsync(
+            [safeThis, ok = !synthesized.empty(), onChanged]() {
+              if (safeThis == nullptr)
+                return;
+              safeThis->toolbar.hideProgress();
+              if (ok && onChanged)
+                onChanged();
+            });
       });
-    } else {
-      juce::MessageManager::callAsync([safeThis]() {
-        if (safeThis != nullptr)
-          safeThis->toolbar.hideProgress();
-      });
-    }
-  }).detach();
 }
