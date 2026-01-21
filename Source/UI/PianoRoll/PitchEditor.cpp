@@ -326,13 +326,46 @@ void PitchEditor::applyPitchPoint(int frameIndex, int midiCents) {
       audioData.voicedMask[idx] = true;
   };
 
-  if (!activeDrawCurve || frameIndex < activeDrawCurve->localStart()) {
+  // Only start a new curve if there's no active curve (first point of drawing)
+  if (!activeDrawCurve) {
     startNewPitchCurve(frameIndex, midiCents);
     applyFrame(frameIndex, midiCents);
     return;
   }
 
+  // Helper to append/prepend value to the active curve
+  auto appendValue = [&](int idx, int cents) {
+    if (!activeDrawCurve)
+      return;
+
+    const int curveStart = activeDrawCurve->localStart();
+    auto &vals = activeDrawCurve->mutableValues();
+
+    // Handle backward drawing: prepend values if idx < curveStart
+    if (idx < curveStart) {
+      const int prependCount = curveStart - idx;
+      std::vector<int> newVals(static_cast<size_t>(prependCount), cents);
+      newVals.insert(newVals.end(), vals.begin(), vals.end());
+      activeDrawCurve->setValues(std::move(newVals));
+      activeDrawCurve->setLocalStart(idx);
+      return;
+    }
+
+    const int offset = idx - curveStart;
+    if (offset < static_cast<int>(vals.size())) {
+      vals[static_cast<std::size_t>(offset)] = cents;
+      return;
+    }
+
+    while (static_cast<int>(vals.size()) < offset) {
+      int fill = vals.empty() ? cents : vals.back();
+      vals.push_back(fill);
+    }
+    vals.push_back(cents);
+  };
+
   if (lastDrawFrame < 0) {
+    appendValue(frameIndex, midiCents);
     applyFrame(frameIndex, midiCents);
   } else {
     int start = lastDrawFrame;
@@ -341,6 +374,7 @@ void PitchEditor::applyPitchPoint(int frameIndex, int midiCents) {
     int endVal = midiCents;
 
     if (start == end) {
+      appendValue(frameIndex, midiCents);
       applyFrame(frameIndex, midiCents);
     } else {
       int step = (end > start) ? 1 : -1;
@@ -353,6 +387,7 @@ void PitchEditor::applyPitchPoint(int frameIndex, int midiCents) {
         float v = juce::jmap(t, 0.0f, 1.0f, static_cast<float>(startVal),
                              static_cast<float>(endVal));
         int cents = static_cast<int>(std::round(v));
+        appendValue(idx, cents);
         applyFrame(idx, cents);
       }
     }

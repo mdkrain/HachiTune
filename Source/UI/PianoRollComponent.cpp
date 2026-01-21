@@ -1895,7 +1895,8 @@ void PianoRollComponent::applyPitchPoint(int frameIndex, int midiCents) {
   if (frameIndex < 0 || frameIndex >= f0Size)
     return;
 
-  if (!activeDrawCurve || frameIndex < activeDrawCurve->localStart()) {
+  // Only start a new curve if there's no active curve (first point of drawing)
+  if (!activeDrawCurve) {
     startNewPitchCurve(frameIndex, midiCents);
     // First point of the new curve: apply and exit
     auto applyFrameFirst = [&](int idx, int cents) {
@@ -2002,11 +2003,21 @@ void PianoRollComponent::applyPitchPoint(int frameIndex, int midiCents) {
   auto appendValue = [&](int idx, int cents) {
     if (!activeDrawCurve)
       return;
-    const int offset = idx - activeDrawCurve->localStart();
-    if (offset < 0)
-      return;
 
+    const int curveStart = activeDrawCurve->localStart();
     auto &vals = activeDrawCurve->mutableValues();
+
+    // Handle backward drawing: prepend values if idx < curveStart
+    if (idx < curveStart) {
+      const int prependCount = curveStart - idx;
+      std::vector<int> newVals(static_cast<size_t>(prependCount), cents);
+      newVals.insert(newVals.end(), vals.begin(), vals.end());
+      activeDrawCurve->setValues(std::move(newVals));
+      activeDrawCurve->setLocalStart(idx);
+      return;
+    }
+
+    const int offset = idx - curveStart;
     if (offset < static_cast<int>(vals.size())) {
       vals[static_cast<std::size_t>(offset)] = cents;
       return;
