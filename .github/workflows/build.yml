@@ -319,11 +319,19 @@ jobs:
 
       - name: Create DMG
         run: |
+          for volume in "HachiTune" "HachiTune-NoModels"; do
+            if [ -d "/Volumes/$volume" ]; then
+              hdiutil detach "/Volumes/$volume" || hdiutil detach -force "/Volumes/$volume"
+            fi
+          done
+
+          rm -f HachiTune-macOS.dmg HachiTune-macOS-NoModels.dmg
+
           hdiutil create -volname "HachiTune" \
             -srcfolder package \
             -ov -format UDZO \
             HachiTune-macOS.dmg
-          hdiutil create -volname "HachiTune" \
+          hdiutil create -volname "HachiTune-NoModels" \
             -srcfolder package-nomodels \
             -ov -format UDZO \
             HachiTune-macOS-NoModels.dmg
