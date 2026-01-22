@@ -54,7 +54,9 @@ public:
     void setTotalTime(double time);
     void setEditMode(EditMode mode);
     void setZoom(float pixelsPerSecond);  // Update zoom slider without triggering callback
+    void setLoopEnabled(bool enabled);
     bool isFollowPlayback() const { return followPlayback; }
+    bool isLoopEnabled() const { return loopEnabled; }
 
     // Plugin mode
     void setPluginMode(bool isPlugin);
@@ -76,6 +78,7 @@ public:
     std::function<void()> onGoToEnd;
     std::function<void(float)> onZoomChanged;
     std::function<void(EditMode)> onEditModeChanged;
+    std::function<void(bool)> onLoopToggled;
 
     // Plugin mode callbacks
     std::function<void()> onReanalyze;
@@ -105,6 +108,7 @@ private:
     ToolButton drawModeButton { "Draw" };
     ToolButton splitModeButton { "Split" };
     ToolButton followButton { "Follow" };
+    ToolButton loopButton { "Loop" };
     juce::Rectangle<int> toolContainerBounds;  // For drawing container background
     
     juce::Label timeLabel;
@@ -130,6 +134,7 @@ private:
     double totalTime = 0.0;
     bool isPlaying = false;
     bool followPlayback = true;
+    bool loopEnabled = false;
     int currentEditModeInt = 0;  // 0 = Select, 1 = Draw, 2 = Split
 
 #if JUCE_MAC

@@ -38,7 +38,7 @@ void ScrollZoomController::scrollBarMoved(juce::ScrollBar* scrollBar, double new
 }
 
 void ScrollZoomController::handleMouseWheel(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel,
-                                            int pianoKeysWidth, int timelineHeight,
+                                            int pianoKeysWidth, int headerHeight,
                                             int componentWidth, int componentHeight) {
     if (!coordMapper)
         return;
@@ -46,13 +46,13 @@ void ScrollZoomController::handleMouseWheel(const juce::MouseEvent& e, const juc
     float scrollMultiplier = wheel.isSmooth ? 200.0f : 80.0f;
 
     bool isOverPianoKeys = e.x < pianoKeysWidth;
-    bool isOverTimeline = e.y < timelineHeight;
+    bool isOverTimeline = e.y < headerHeight;
 
     if (!e.mods.isCommandDown() && !e.mods.isCtrlDown()) {
         // Hover-based zoom
         if (isOverPianoKeys) {
             // Vertical zoom
-            float mouseY = e.y - timelineHeight;
+            float mouseY = e.y - headerHeight;
             float midiAtMouse = (mouseY + coordMapper->getScrollY()) / coordMapper->getPixelsPerSemitone();
 
             float zoomFactor = 1.0f + wheel.deltaY * 0.3f;
@@ -115,7 +115,7 @@ void ScrollZoomController::handleMouseWheel(const juce::MouseEvent& e, const juc
 
         // Calculate mouse position relative to content area
         float mouseX = static_cast<float>(e.x - pianoKeysWidth);
-        float mouseY = static_cast<float>(e.y - timelineHeight);
+        float mouseY = static_cast<float>(e.y - headerHeight);
 
         // Get current position under mouse
         double timeAtMouse = coordMapper->xToTime(mouseX + static_cast<float>(coordMapper->getScrollX()));

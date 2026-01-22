@@ -106,10 +106,10 @@ void PianoRollComponent::paint(juce::Graphics &g) {
 
   constexpr int scrollBarSize = 8;
 
-  // Create clipping region for main area (below timeline)
+  // Create clipping region for main area (below timelines)
   auto mainArea = getLocalBounds()
                       .withTrimmedLeft(pianoKeysWidth)
-                      .withTrimmedTop(timelineHeight)
+                      .withTrimmedTop(headerHeight)
                       .withTrimmedBottom(scrollBarSize)
                       .withTrimmedRight(scrollBarSize);
 
@@ -125,9 +125,10 @@ void PianoRollComponent::paint(juce::Graphics &g) {
     juce::Graphics::ScopedSaveState saveState(g);
     g.reduceClipRegion(mainArea);
     g.setOrigin(pianoKeysWidth - static_cast<int>(scrollX),
-                timelineHeight - static_cast<int>(scrollY));
+                headerHeight - static_cast<int>(scrollY));
 
     drawGrid(g);
+    drawLoopOverlay(g);
     drawNotes(g);
     drawPitchCurves(g);
     drawSelectionRect(g);
@@ -135,6 +136,7 @@ void PianoRollComponent::paint(juce::Graphics &g) {
 
   // Draw timeline (above grid, scrolls horizontally)
   drawTimeline(g);
+  drawLoopTimeline(g);
 
   // Draw unified cursor line (spans from timeline through grid)
   {
@@ -174,8 +176,8 @@ void PianoRollComponent::resized() {
       bounds.getWidth() - pianoKeysWidth - scrollBarSize, scrollBarSize);
 
   verticalScrollBar.setBounds(
-      bounds.getWidth() - scrollBarSize, timelineHeight, scrollBarSize,
-      bounds.getHeight() - scrollBarSize - timelineHeight);
+      bounds.getWidth() - scrollBarSize, headerHeight, scrollBarSize,
+      bounds.getHeight() - scrollBarSize - headerHeight);
 
   updateScrollBars();
 }
@@ -316,6 +318,43 @@ void PianoRollComponent::drawGrid(juce::Graphics &g) {
   }
 }
 
+void PianoRollComponent::drawLoopOverlay(juce::Graphics &g) {
+  if (!project)
+    return;
+
+  double loopStartSeconds = 0.0;
+  double loopEndSeconds = 0.0;
+  bool loopEnabled = false;
+  if (loopDragMode != LoopDragMode::None) {
+    loopStartSeconds = loopDragStartSeconds;
+    loopEndSeconds = loopDragEndSeconds;
+    loopEnabled = true;
+  } else {
+    const auto &loopRange = project->getLoopRange();
+    loopStartSeconds = loopRange.startSeconds;
+    loopEndSeconds = loopRange.endSeconds;
+    loopEnabled = loopRange.enabled;
+  }
+
+  if (loopStartSeconds > loopEndSeconds)
+    std::swap(loopStartSeconds, loopEndSeconds);
+
+  if (loopEndSeconds <= loopStartSeconds)
+    return;
+
+  const float startX = timeToX(loopStartSeconds);
+  const float endX = timeToX(loopEndSeconds);
+
+  const float height =
+      (MAX_MIDI_NOTE - MIN_MIDI_NOTE) * pixelsPerSemitone;
+  const auto baseColor = juce::Colour(APP_COLOR_PRIMARY);
+  const auto fillColor =
+      loopEnabled ? baseColor.withAlpha(0.08f) : baseColor.withAlpha(0.04f);
+
+  g.setColour(fillColor);
+  g.fillRect(startX, 0.0f, endX - startX, height);
+}
+
 void PianoRollComponent::drawTimeline(juce::Graphics &g) {
   constexpr int scrollBarSize = 8;
   auto timelineArea = juce::Rectangle<int>(
@@ -385,6 +424,86 @@ void PianoRollComponent::drawTimeline(juce::Graphics &g) {
                  juce::Justification::centredLeft, false);
     }
   }
+}
+
+void PianoRollComponent::drawLoopTimeline(juce::Graphics &g) {
+  constexpr int scrollBarSize = 8;
+  auto loopArea = juce::Rectangle<int>(
+      pianoKeysWidth, timelineHeight,
+      getWidth() - pianoKeysWidth - scrollBarSize, loopTimelineHeight);
+
+  g.setColour(juce::Colour(0xFF171722));
+  g.fillRect(loopArea);
+
+  g.setColour(juce::Colour(APP_COLOR_GRID_BAR));
+  g.drawHorizontalLine(headerHeight - 1,
+                       static_cast<float>(pianoKeysWidth),
+                       static_cast<float>(getWidth() - scrollBarSize));
+
+  if (!project)
+    return;
+
+  double loopStartSeconds = 0.0;
+  double loopEndSeconds = 0.0;
+  bool loopEnabled = false;
+  if (loopDragMode != LoopDragMode::None) {
+    loopStartSeconds = loopDragStartSeconds;
+    loopEndSeconds = loopDragEndSeconds;
+    loopEnabled = true;
+  } else {
+    const auto &loopRange = project->getLoopRange();
+    loopStartSeconds = loopRange.startSeconds;
+    loopEndSeconds = loopRange.endSeconds;
+    loopEnabled = loopRange.enabled;
+  }
+
+  if (loopStartSeconds > loopEndSeconds)
+    std::swap(loopStartSeconds, loopEndSeconds);
+
+  if (loopEndSeconds <= loopStartSeconds)
+    return;
+
+  const float startX =
+      static_cast<float>(pianoKeysWidth) + timeToX(loopStartSeconds) -
+      static_cast<float>(scrollX);
+  const float endX =
+      static_cast<float>(pianoKeysWidth) + timeToX(loopEndSeconds) -
+      static_cast<float>(scrollX);
+
+  auto range = juce::Rectangle<float>(
+      startX, static_cast<float>(timelineHeight), endX - startX,
+      static_cast<float>(loopTimelineHeight));
+
+  const auto baseColor = juce::Colour(APP_COLOR_PRIMARY);
+  const auto fillColor =
+      loopEnabled ? baseColor.withAlpha(0.25f) : baseColor.withAlpha(0.12f);
+  const auto edgeColor =
+      loopEnabled ? baseColor : juce::Colour(0xFF666677);
+
+  g.setColour(fillColor);
+  g.fillRect(range);
+
+  g.setColour(edgeColor);
+  g.drawLine(startX, static_cast<float>(timelineHeight), startX,
+             static_cast<float>(headerHeight - 1), 1.5f);
+  g.drawLine(endX, static_cast<float>(timelineHeight), endX,
+             static_cast<float>(headerHeight - 1), 1.5f);
+
+  constexpr float flagWidth = 6.0f;
+  constexpr float flagHeight = 6.0f;
+  constexpr float flagTop = 0.0f;
+
+  const float flagY = static_cast<float>(timelineHeight) + flagTop;
+
+  juce::Path startFlag;
+  startFlag.addTriangle(startX, flagY, startX, flagY + flagHeight,
+                        startX - flagWidth, flagY + flagHeight);
+  g.fillPath(startFlag);
+
+  juce::Path endFlag;
+  endFlag.addTriangle(endX, flagY, endX, flagY + flagHeight,
+                      endX + flagWidth, flagY + flagHeight);
+  g.fillPath(endFlag);
 }
 
 void PianoRollComponent::drawNotes(juce::Graphics &g) {
@@ -818,7 +937,7 @@ void PianoRollComponent::drawPianoKeys(juce::Graphics &g) {
   constexpr int scrollBarSize = 8;
   auto keyArea = getLocalBounds()
                      .withWidth(pianoKeysWidth)
-                     .withTrimmedTop(timelineHeight)
+                     .withTrimmedTop(headerHeight)
                      .withTrimmedBottom(scrollBarSize);
 
   // Background
@@ -834,7 +953,7 @@ void PianoRollComponent::drawPianoKeys(juce::Graphics &g) {
   int scrollYInt = static_cast<int>(scrollY);
   for (int midi = MIN_MIDI_NOTE; midi <= MAX_MIDI_NOTE; ++midi) {
     float y = midiToY(static_cast<float>(midi)) -
-              static_cast<float>(scrollYInt) + timelineHeight;
+              static_cast<float>(scrollYInt) + headerHeight;
     int noteInOctave = midi % 12;
 
     // Check if it's a black key
@@ -888,7 +1007,7 @@ void PianoRollComponent::mouseDown(const juce::MouseEvent &e) {
   grabKeyboardFocus();
 
   float adjustedX = e.x - pianoKeysWidth + static_cast<float>(scrollX);
-  float adjustedY = e.y - timelineHeight + static_cast<float>(scrollY);
+  float adjustedY = e.y - headerHeight + static_cast<float>(scrollY);
 
   // Handle timeline clicks - seek to position
   if (e.y < timelineHeight && e.x >= pianoKeysWidth) {
@@ -903,8 +1022,54 @@ void PianoRollComponent::mouseDown(const juce::MouseEvent &e) {
     return;
   }
 
+  // Handle loop timeline drag
+  if (e.y >= timelineHeight && e.y < headerHeight && e.x >= pianoKeysWidth) {
+    const auto &loopRange = project->getLoopRange();
+    if (loopRange.endSeconds > loopRange.startSeconds) {
+      const float startX =
+          static_cast<float>(pianoKeysWidth) + timeToX(loopRange.startSeconds) -
+          static_cast<float>(scrollX);
+      const float endX =
+          static_cast<float>(pianoKeysWidth) + timeToX(loopRange.endSeconds) -
+          static_cast<float>(scrollX);
+
+      if (std::abs(static_cast<float>(e.x) - startX) <= loopHandleHitPadding) {
+        loopDragMode = LoopDragMode::ResizeStart;
+        loopDragStartSeconds = loopRange.startSeconds;
+        loopDragEndSeconds = loopRange.endSeconds;
+        repaint();
+        return;
+      }
+      if (std::abs(static_cast<float>(e.x) - endX) <= loopHandleHitPadding) {
+        loopDragMode = LoopDragMode::ResizeEnd;
+        loopDragStartSeconds = loopRange.startSeconds;
+        loopDragEndSeconds = loopRange.endSeconds;
+        repaint();
+        return;
+      }
+      if (static_cast<float>(e.x) >= startX &&
+          static_cast<float>(e.x) <= endX) {
+        loopDragMode = LoopDragMode::Move;
+        loopDragAnchorSeconds = xToTime(adjustedX);
+        loopDragOriginalStart = loopRange.startSeconds;
+        loopDragOriginalEnd = loopRange.endSeconds;
+        loopDragStartSeconds = loopRange.startSeconds;
+        loopDragEndSeconds = loopRange.endSeconds;
+        repaint();
+        return;
+      }
+    }
+
+    loopDragMode = LoopDragMode::Create;
+    loopDragStartX = static_cast<float>(e.x);
+    loopDragStartSeconds = std::max(0.0, xToTime(adjustedX));
+    loopDragEndSeconds = loopDragStartSeconds;
+    repaint();
+    return;
+  }
+
   // Ignore clicks outside main area
-  if (e.y < timelineHeight || e.x < pianoKeysWidth)
+  if (e.y < headerHeight || e.x < pianoKeysWidth)
     return;
 
   if (editMode == EditMode::Draw) {
@@ -1007,7 +1172,54 @@ void PianoRollComponent::mouseDrag(const juce::MouseEvent &e) {
   bool shouldRepaint = (now - lastDragRepaintTime) >= minDragRepaintInterval;
 
   float adjustedX = e.x - pianoKeysWidth + static_cast<float>(scrollX);
-  float adjustedY = e.y - timelineHeight + static_cast<float>(scrollY);
+  float adjustedY = e.y - headerHeight + static_cast<float>(scrollY);
+
+  if (loopDragMode != LoopDragMode::None) {
+    switch (loopDragMode) {
+    case LoopDragMode::ResizeStart:
+      loopDragStartSeconds = std::max(0.0, xToTime(adjustedX));
+      break;
+    case LoopDragMode::ResizeEnd:
+      loopDragEndSeconds = std::max(0.0, xToTime(adjustedX));
+      break;
+    case LoopDragMode::Create:
+      loopDragEndSeconds = std::max(0.0, xToTime(adjustedX));
+      break;
+    case LoopDragMode::Move: {
+      double delta = xToTime(adjustedX) - loopDragAnchorSeconds;
+      double newStart = loopDragOriginalStart + delta;
+      double newEnd = loopDragOriginalEnd + delta;
+
+      if (project) {
+        const double duration = project->getAudioData().getDuration();
+        if (duration > 0.0) {
+          if (newStart < 0.0) {
+            newEnd -= newStart;
+            newStart = 0.0;
+          }
+          if (newEnd > duration) {
+            double overflow = newEnd - duration;
+            newStart -= overflow;
+            newEnd = duration;
+            if (newStart < 0.0)
+              newStart = 0.0;
+          }
+        }
+      }
+
+      loopDragStartSeconds = newStart;
+      loopDragEndSeconds = newEnd;
+      break;
+    }
+    case LoopDragMode::None:
+      break;
+    }
+    if (shouldRepaint) {
+      repaint();
+      lastDragRepaintTime = now;
+    }
+    return;
+  }
 
   if (editMode == EditMode::Draw && isDrawing) {
     applyPitchDrawing(adjustedX, adjustedY);
@@ -1063,6 +1275,26 @@ void PianoRollComponent::mouseUp(const juce::MouseEvent &e) {
 
   // Ensure keyboard focus is maintained after mouse operations
   grabKeyboardFocus();
+
+  if (loopDragMode != LoopDragMode::None) {
+    constexpr float minDragDistance = 4.0f;
+    const bool isCreate = loopDragMode == LoopDragMode::Create;
+    loopDragMode = LoopDragMode::None;
+
+    if (!project) {
+      repaint();
+      return;
+    }
+
+    if (!isCreate ||
+        std::abs(static_cast<float>(e.x) - loopDragStartX) >= minDragDistance) {
+      project->setLoopRange(loopDragStartSeconds, loopDragEndSeconds);
+      if (onLoopRangeChanged)
+        onLoopRangeChanged(project->getLoopRange());
+    }
+    repaint();
+    return;
+  }
 
   if (editMode == EditMode::Draw && isDrawing) {
     isDrawing = false;
@@ -1207,10 +1439,37 @@ void PianoRollComponent::mouseUp(const juce::MouseEvent &e) {
 }
 
 void PianoRollComponent::mouseMove(const juce::MouseEvent &e) {
+  if (project && e.y >= timelineHeight && e.y < headerHeight &&
+      e.x >= pianoKeysWidth) {
+    const auto &loopRange = project->getLoopRange();
+    if (loopRange.endSeconds > loopRange.startSeconds) {
+      const float startX =
+          static_cast<float>(pianoKeysWidth) + timeToX(loopRange.startSeconds) -
+          static_cast<float>(scrollX);
+      const float endX =
+          static_cast<float>(pianoKeysWidth) + timeToX(loopRange.endSeconds) -
+          static_cast<float>(scrollX);
+
+      if (std::abs(static_cast<float>(e.x) - startX) <= loopHandleHitPadding ||
+          std::abs(static_cast<float>(e.x) - endX) <= loopHandleHitPadding) {
+        setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
+      } else if (static_cast<float>(e.x) > startX &&
+                 static_cast<float>(e.x) < endX) {
+        setMouseCursor(juce::MouseCursor::DraggingHandCursor);
+      } else {
+        setMouseCursor(juce::MouseCursor::NormalCursor);
+      }
+    } else {
+      setMouseCursor(juce::MouseCursor::NormalCursor);
+    }
+  } else {
+    setMouseCursor(juce::MouseCursor::NormalCursor);
+  }
+
   // Split mode guide line
   if (editMode == EditMode::Split && project) {
     float adjustedX = e.x - pianoKeysWidth + static_cast<float>(scrollX);
-    float adjustedY = e.y - timelineHeight + static_cast<float>(scrollY);
+    float adjustedY = e.y - headerHeight + static_cast<float>(scrollY);
 
     Note *note = noteSplitter->findNoteAt(adjustedX, adjustedY);
     if (note) {
@@ -1234,11 +1493,11 @@ void PianoRollComponent::mouseDoubleClick(const juce::MouseEvent &e) {
     return;
 
   // Ignore double-clicks outside main area
-  if (e.y < timelineHeight || e.x < pianoKeysWidth)
+  if (e.y < headerHeight || e.x < pianoKeysWidth)
     return;
 
   float adjustedX = e.x - pianoKeysWidth + static_cast<float>(scrollX);
-  float adjustedY = e.y - timelineHeight + static_cast<float>(scrollY);
+  float adjustedY = e.y - headerHeight + static_cast<float>(scrollY);
 
   // Check if double-clicking on a note
   Note *note = findNoteAt(adjustedX, adjustedY);
@@ -1294,14 +1553,14 @@ void PianoRollComponent::mouseWheelMove(const juce::MouseEvent &e,
   float scrollMultiplier = wheel.isSmooth ? 200.0f : 80.0f;
 
   bool isOverPianoKeys = e.x < pianoKeysWidth;
-  bool isOverTimeline = e.y < timelineHeight;
+  bool isOverTimeline = e.y < headerHeight;
 
   // Hover-based zoom (no modifier keys needed)
   if (!e.mods.isCommandDown() && !e.mods.isCtrlDown()) {
     // Over piano keys: vertical zoom
     if (isOverPianoKeys) {
       // Calculate MIDI note at mouse position before zoom
-      float mouseY = e.y - timelineHeight;
+      float mouseY = e.y - headerHeight;
       float midiAtMouse = (mouseY + scrollY) / pixelsPerSemitone;
 
       float zoomFactor = 1.0f + wheel.deltaY * 0.3f;
@@ -1376,7 +1635,7 @@ void PianoRollComponent::mouseWheelMove(const juce::MouseEvent &e,
 
     if (e.mods.isShiftDown()) {
       // Vertical zoom - center on mouse position
-      float mouseY = static_cast<float>(e.y - timelineHeight);
+      float mouseY = static_cast<float>(e.y - headerHeight);
       float midiAtMouse = yToMidi(mouseY + static_cast<float>(scrollY));
 
       float newPps = pixelsPerSemitone * zoomFactor;

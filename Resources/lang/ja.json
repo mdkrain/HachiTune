@@ -19,6 +19,7 @@
   "toolbar.draw": "描画",
   "toolbar.split": "分割",
   "toolbar.follow": "追従",
+  "toolbar.loop": "ループ",
   "toolbar.zoom": "ズーム:",
   "toolbar.reanalyze": "再分析",
   "toolbar.render": "レンダリング",

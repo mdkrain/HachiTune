@@ -33,6 +33,12 @@ public:
   void stop();
   void seek(double timeSeconds);
 
+  // Loop control (seconds)
+  void setLoopRange(double startSeconds, double endSeconds);
+  void setLoopEnabled(bool enabled);
+  void clearLoopRange();
+  bool isLoopEnabled() const { return loopEnabled.load(); }
+
   bool isPlaying() const { return playing; }
   double getPosition() const; // Returns position in seconds
   double getDuration() const;
@@ -98,6 +104,11 @@ private:
 
   // Volume control (linear gain, lock-free for audio thread)
   std::atomic<float> volumeGain{1.0f};
+
+  // Loop range (in waveform samples)
+  std::atomic<bool> loopEnabled{false};
+  std::atomic<int64_t> loopStartSample{0};
+  std::atomic<int64_t> loopEndSample{0};
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioEngine)
 };

@@ -19,6 +19,7 @@
   "toolbar.draw": "繪製",
   "toolbar.split": "切割",
   "toolbar.follow": "跟隨",
+  "toolbar.loop": "循環",
   "toolbar.zoom": "縮放:",
   "toolbar.reanalyze": "重新分析",
   "toolbar.render": "渲染",

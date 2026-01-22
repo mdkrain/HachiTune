@@ -242,3 +242,33 @@ std::vector<float> Project::getAdjustedF0ForRange(int startFrame, int endFrame) 
 
     return adjustedF0;
 }
+
+void Project::setLoopRange(double startSeconds, double endSeconds)
+{
+    if (startSeconds > endSeconds)
+        std::swap(startSeconds, endSeconds);
+
+    const double duration = audioData.getDuration();
+    if (duration > 0.0)
+    {
+        startSeconds = juce::jlimit(0.0, duration, startSeconds);
+        endSeconds = juce::jlimit(0.0, duration, endSeconds);
+    }
+
+    loopRange.startSeconds = startSeconds;
+    loopRange.endSeconds = endSeconds;
+    loopRange.enabled = loopRange.endSeconds > loopRange.startSeconds;
+}
+
+void Project::setLoopEnabled(bool enabled)
+{
+    if (enabled && loopRange.endSeconds <= loopRange.startSeconds)
+        loopRange.enabled = false;
+    else
+        loopRange.enabled = enabled;
+}
+
+void Project::clearLoopRange()
+{
+    loopRange = {};
+}

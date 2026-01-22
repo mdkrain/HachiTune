@@ -1,4 +1,5 @@
 #include "AudioEngine.h"
+#include <algorithm>
 
 AudioEngine::AudioEngine() {}
 
@@ -68,7 +69,18 @@ void AudioEngine::getNextAudioBlock(
   int64_t pos = currentPosition.load();
   int64_t waveformLength = currentWaveform.getNumSamples();
 
-  if (pos >= waveformLength) {
+  bool loopActive = loopEnabled.load();
+  int64_t loopStart = loopStartSample.load();
+  int64_t loopEnd = loopEndSample.load();
+
+  if (loopActive) {
+    loopStart = juce::jlimit<int64_t>(0, waveformLength, loopStart);
+    loopEnd = juce::jlimit<int64_t>(0, waveformLength, loopEnd);
+    if (loopEnd <= loopStart)
+      loopActive = false;
+  }
+
+  if (!loopActive && pos >= waveformLength) {
     bufferToFill.clearActiveBufferRegion();
     playing = false;
 
@@ -78,19 +90,59 @@ void AudioEngine::getNextAudioBlock(
     return;
   }
 
+  if (loopActive && pos >= loopEnd) {
+    pos = loopStart;
+    interpolator.reset();
+  }
+
   // Use interpolator for sample rate conversion
   const float *inputData = currentWaveform.getReadPointer(0);
   float *outputData = outputBuffer->getWritePointer(0, startSample);
 
-  // Calculate how many input samples we need
-  int inputSamplesAvailable = static_cast<int>(waveformLength - pos);
+  outputBuffer->clear(startSample, numOutputSamples);
 
-  // Process with interpolation
-  int samplesUsed =
-      interpolator.process(playbackRatio, inputData + pos, outputData,
-                           numOutputSamples, inputSamplesAvailable,
-                           0 // No wrap
-      );
+  int samplesRemaining = numOutputSamples;
+  int writeOffset = 0;
+
+  while (samplesRemaining > 0) {
+    int64_t segmentEnd = loopActive ? loopEnd : waveformLength;
+    int64_t inputAvailable = segmentEnd - pos;
+
+    if (inputAvailable <= 0) {
+      if (loopActive) {
+        pos = loopStart;
+        interpolator.reset();
+        continue;
+      }
+      break;
+    }
+
+    int maxOutput = static_cast<int>(inputAvailable / playbackRatio);
+    if (maxOutput <= 0) {
+      if (loopActive) {
+        pos = loopStart;
+        interpolator.reset();
+        continue;
+      }
+      break;
+    }
+
+    int outCount = std::min(samplesRemaining, maxOutput);
+    int samplesUsed = interpolator.process(playbackRatio, inputData + pos,
+                                           outputData + writeOffset, outCount,
+                                           static_cast<int>(inputAvailable),
+                                           0 // No wrap
+    );
+
+    pos += samplesUsed;
+    samplesRemaining -= outCount;
+    writeOffset += outCount;
+
+    if (loopActive && pos >= loopEnd) {
+      pos = loopStart;
+      interpolator.reset();
+    }
+  }
 
   // Apply volume gain (lock-free read)
   float gain = volumeGain.load();
@@ -99,9 +151,7 @@ void AudioEngine::getNextAudioBlock(
     juce::FloatVectorOperations::multiply(outputData, gain, numOutputSamples);
   }
 
-  // Update position
-  int64_t newPos = pos + samplesUsed;
-  currentPosition.store(newPos);
+  currentPosition.store(pos);
 
   // Copy to other channels (if stereo output)
   for (int ch = 1; ch < outputBuffer->getNumChannels(); ++ch) {
@@ -110,8 +160,7 @@ void AudioEngine::getNextAudioBlock(
                            numOutputSamples);
   }
 
-  // Check if we've reached the end
-  if (newPos >= waveformLength) {
+  if (!loopActive && samplesRemaining > 0) {
     playing = false;
     if (auto cb = std::atomic_load(&finishCallback))
       juce::MessageManager::callAsync([cb]() { (*cb)(); });
@@ -174,6 +223,18 @@ void AudioEngine::loadWaveform(const juce::AudioBuffer<float> &buffer,
   DBG("Loaded waveform: " + juce::String(buffer.getNumSamples()) +
       " samples at " + juce::String(sampleRate) +
       " Hz, playback ratio: " + juce::String(playbackRatio));
+
+  if (loopEnabled.load()) {
+    auto loopStart = loopStartSample.load();
+    auto loopEnd = loopEndSample.load();
+    const int64_t waveformLength = currentWaveform.getNumSamples();
+    loopStart = juce::jlimit<int64_t>(0, waveformLength, loopStart);
+    loopEnd = juce::jlimit<int64_t>(0, waveformLength, loopEnd);
+    loopStartSample.store(loopStart);
+    loopEndSample.store(loopEnd);
+    if (loopEnd <= loopStart)
+      loopEnabled.store(false);
+  }
 }
 
 void AudioEngine::play() {
@@ -205,6 +266,37 @@ void AudioEngine::seek(double timeSeconds) {
   currentPosition.store(newPos);
   interpolator.reset();
   fractionalPosition = 0.0;
+}
+
+void AudioEngine::setLoopRange(double startSeconds, double endSeconds) {
+  if (startSeconds > endSeconds)
+    std::swap(startSeconds, endSeconds);
+
+  const juce::SpinLock::ScopedLockType lock(waveformLock);
+  const int64_t waveformLength = currentWaveform.getNumSamples();
+  int64_t startSample =
+      static_cast<int64_t>(startSeconds * waveformSampleRate);
+  int64_t endSample = static_cast<int64_t>(endSeconds * waveformSampleRate);
+
+  startSample = juce::jlimit<int64_t>(0, waveformLength, startSample);
+  endSample = juce::jlimit<int64_t>(0, waveformLength, endSample);
+
+  loopStartSample.store(startSample);
+  loopEndSample.store(endSample);
+  loopEnabled.store(endSample > startSample);
+}
+
+void AudioEngine::setLoopEnabled(bool enabled) {
+  if (enabled && loopEndSample.load() <= loopStartSample.load())
+    loopEnabled.store(false);
+  else
+    loopEnabled.store(enabled);
+}
+
+void AudioEngine::clearLoopRange() {
+  loopEnabled.store(false);
+  loopStartSample.store(0);
+  loopEndSample.store(0);
 }
 
 double AudioEngine::getPosition() const {

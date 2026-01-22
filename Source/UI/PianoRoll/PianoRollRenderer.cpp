@@ -478,8 +478,8 @@ void PianoRollRenderer::drawPianoKeys(juce::Graphics &g, int height) {
 
   constexpr int scrollBarSize = 8;
   auto keyArea = juce::Rectangle<int>(
-      0, CoordinateMapper::timelineHeight, CoordinateMapper::pianoKeysWidth,
-      height - CoordinateMapper::timelineHeight - scrollBarSize);
+      0, CoordinateMapper::headerHeight, CoordinateMapper::pianoKeysWidth,
+      height - CoordinateMapper::headerHeight - scrollBarSize);
 
   g.setColour(juce::Colour(0xFF1A1A24));
   g.fillRect(keyArea);
@@ -492,7 +492,7 @@ void PianoRollRenderer::drawPianoKeys(juce::Graphics &g, int height) {
 
   for (int midi = MIN_MIDI_NOTE; midi <= MAX_MIDI_NOTE; ++midi) {
     float y = coordMapper->midiToY(static_cast<float>(midi)) -
-              static_cast<float>(scrollY) + CoordinateMapper::timelineHeight;
+              static_cast<float>(scrollY) + CoordinateMapper::headerHeight;
     int noteInOctave = midi % 12;
 
     bool isBlack =

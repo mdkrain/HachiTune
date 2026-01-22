@@ -107,6 +107,7 @@ public:
   std::function<void(double)> onSeek;
   std::function<void(float)> onZoomChanged;
   std::function<void(double)> onScrollChanged;
+  std::function<void(const LoopRange &)> onLoopRangeChanged;
   std::function<void(int, int)>
       onReinterpolateUV; // Called to re-infer UV regions (startFrame, endFrame)
   std::function<void()> onUndo; // Called when Ctrl+Z is pressed
@@ -118,12 +119,14 @@ private:
                               const juce::Rectangle<int> &visibleArea);
   void drawGrid(juce::Graphics &g);
   void drawTimeline(juce::Graphics &g);
+  void drawLoopTimeline(juce::Graphics &g);
   void drawNotes(juce::Graphics &g);
   void drawPitchCurves(juce::Graphics &g);
   void drawCursor(juce::Graphics &g);
   void drawPianoKeys(juce::Graphics &g);
   void drawDrawingCursor(juce::Graphics &g); // Draw mode indicator
   void drawSelectionRect(juce::Graphics &g); // Box selection rectangle
+  void drawLoopOverlay(juce::Graphics &g);
 
   float midiToY(float midiNote) const;
   float yToMidi(float y) const;
@@ -166,6 +169,8 @@ private:
   // Piano keys area width
   static constexpr int pianoKeysWidth = 60;
   static constexpr int timelineHeight = 24;
+  static constexpr int loopTimelineHeight = 16;
+  static constexpr int headerHeight = timelineHeight + loopTimelineHeight;
 
   // Edit mode
   EditMode editMode = EditMode::Select;
@@ -204,6 +209,23 @@ private:
   float splitGuideX =
       -1.0f; // World X coordinate for split guide line (-1 = hidden)
   Note *splitGuideNote = nullptr; // Note being hovered for split
+
+  // Loop range drag state
+  enum class LoopDragMode {
+    None,
+    Create,
+    ResizeStart,
+    ResizeEnd,
+    Move
+  };
+  LoopDragMode loopDragMode = LoopDragMode::None;
+  float loopDragStartX = 0.0f;
+  double loopDragStartSeconds = 0.0;
+  double loopDragEndSeconds = 0.0;
+  double loopDragAnchorSeconds = 0.0;
+  double loopDragOriginalStart = 0.0;
+  double loopDragOriginalEnd = 0.0;
+  static constexpr float loopHandleHitPadding = 6.0f;
 
   // Scrollbars
   juce::ScrollBar horizontalScrollBar{false};
