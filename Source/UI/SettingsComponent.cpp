@@ -81,6 +81,8 @@ SettingsComponent::SettingsComponent(
 
   // Audio device settings (standalone mode only)
   if (!pluginMode && deviceManager != nullptr) {
+    deviceManager->addChangeListener(this);
+
     audioSectionLabel.setText(TR("settings.audio"), juce::dontSendNotification);
     audioSectionLabel.setFont(juce::Font(16.0f, juce::Font::bold));
     audioSectionLabel.setColour(juce::Label::textColourId,
@@ -133,6 +135,7 @@ SettingsComponent::SettingsComponent(
     addAndMakeVisible(outputChannelsComboBox);
 
     updateAudioDeviceTypes();
+    startTimer(2000);
   }
 
   // Load saved settings
@@ -145,7 +148,22 @@ SettingsComponent::SettingsComponent(
     setSize(400, 560);
 }
 
-SettingsComponent::~SettingsComponent() {}
+SettingsComponent::~SettingsComponent() {
+  stopTimer();
+  if (!pluginMode && deviceManager != nullptr)
+    deviceManager->removeChangeListener(this);
+}
+
+void SettingsComponent::changeListenerCallback(
+    juce::ChangeBroadcaster *source) {
+  if (source == deviceManager)
+    updateAudioOutputDevices(true);
+}
+
+void SettingsComponent::timerCallback() {
+  if (!pluginMode && deviceManager != nullptr)
+    updateAudioOutputDevices(false);
+}
 
 void SettingsComponent::paint(juce::Graphics &g) {
   g.fillAll(juce::Colour(APP_COLOR_BACKGROUND));
@@ -293,7 +311,7 @@ void SettingsComponent::comboBoxChanged(juce::ComboBox *comboBox) {
     if (idx >= 0 && idx < audioDeviceTypeOrder.size()) {
       deviceManager->setCurrentAudioDeviceType(
           audioDeviceTypeOrder.getReference(idx)->getTypeName(), true);
-      updateAudioOutputDevices();
+      updateAudioOutputDevices(true);
     }
   } else if (comboBox == &audioOutputComboBox) {
     applyAudioSettings();
@@ -677,28 +695,43 @@ void SettingsComponent::updateAudioDeviceTypes() {
       }
     }
   }
-  updateAudioOutputDevices();
+  updateAudioOutputDevices(true);
 }
 
-void SettingsComponent::updateAudioOutputDevices() {
+void SettingsComponent::updateAudioOutputDevices(bool force) {
   if (deviceManager == nullptr)
     return;
 
-  audioOutputComboBox.clear();
   if (auto *currentType = deviceManager->getCurrentDeviceTypeObject()) {
+    currentType->scanForDevices();
     auto devices = currentType->getDeviceNames(false); // false = output devices
+    juce::String currentName;
+    if (auto *audioDevice = deviceManager->getCurrentAudioDevice())
+      currentName = audioDevice->getName();
+
+    if (!force && devices == cachedOutputDevices &&
+        currentName == cachedOutputDeviceName &&
+        currentType->getTypeName() == cachedDeviceTypeName) {
+      return;
+    }
+
+    cachedOutputDevices = devices;
+    cachedOutputDeviceName = currentName;
+    cachedDeviceTypeName = currentType->getTypeName();
+
+    audioOutputComboBox.clear();
     for (int i = 0; i < devices.size(); ++i)
       audioOutputComboBox.addItem(devices[i], i + 1);
 
-    if (auto *audioDevice = deviceManager->getCurrentAudioDevice()) {
-      auto currentName = audioDevice->getName();
-      for (int i = 0; i < devices.size(); ++i) {
-        if (devices[i] == currentName) {
-          audioOutputComboBox.setSelectedId(i + 1, juce::dontSendNotification);
-          break;
-        }
+    for (int i = 0; i < devices.size(); ++i) {
+      if (devices[i] == currentName) {
+        audioOutputComboBox.setSelectedId(i + 1, juce::dontSendNotification);
+        break;
       }
     }
+
+    if (audioOutputComboBox.getSelectedId() == 0 && devices.size() > 0)
+      audioOutputComboBox.setSelectedId(1, juce::dontSendNotification);
   }
   updateSampleRates();
   updateBufferSizes();

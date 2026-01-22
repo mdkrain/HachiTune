@@ -14,7 +14,9 @@ enum class Language; // Forward declaration
  * Includes device selection for ONNX inference.
  */
 class SettingsComponent : public juce::Component,
-                          public juce::ComboBox::Listener {
+                          public juce::ComboBox::Listener,
+                          public juce::ChangeListener,
+                          public juce::Timer {
 public:
   SettingsComponent(SettingsManager *settingsManager,
                     juce::AudioDeviceManager *audioDeviceManager = nullptr);
@@ -25,6 +27,12 @@ public:
 
   // ComboBox::Listener
   void comboBoxChanged(juce::ComboBox *comboBox) override;
+
+  // ChangeListener
+  void changeListenerCallback(juce::ChangeBroadcaster *source) override;
+
+  // Timer
+  void timerCallback() override;
 
   // Get current settings
   juce::String getSelectedDevice() const { return currentDevice; }
@@ -50,7 +58,7 @@ private:
   void updateDeviceList();
   void updateGPUDeviceList(const juce::String &deviceType);
   void updateAudioDeviceTypes();
-  void updateAudioOutputDevices();
+  void updateAudioOutputDevices(bool force = false);
   void updateSampleRates();
   void updateBufferSizes();
   void applyAudioSettings();
@@ -87,6 +95,10 @@ private:
   StyledComboBox bufferSizeComboBox;
   juce::Label outputChannelsLabel;
   StyledComboBox outputChannelsComboBox;
+
+  juce::StringArray cachedOutputDevices;
+  juce::String cachedOutputDeviceName;
+  juce::String cachedDeviceTypeName;
 
   juce::String currentDevice = "CPU";
   int gpuDeviceId = 0;
