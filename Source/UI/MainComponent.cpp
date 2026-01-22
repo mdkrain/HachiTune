@@ -8,6 +8,7 @@
 #include "../Utils/MelSpectrogram.h"
 #include "../Utils/PitchCurveProcessor.h"
 #include "../Utils/PlatformPaths.h"
+#include "../Utils/WindowSizing.h"
 #include <atomic>
 #include <climits>
 #include <iostream>
@@ -15,7 +16,7 @@
 MainComponent::MainComponent(bool enableAudioDevice)
     : enableAudioDeviceFlag(enableAudioDevice) {
   LOG("MainComponent: constructor start");
-  setSize(1400, 900);
+  setSize(WindowSizing::kDefaultWidth, WindowSizing::kDefaultHeight);
   setOpaque(true); // Required for native title bar
 
   LOG("MainComponent: creating core components...");
@@ -313,6 +314,13 @@ MainComponent::~MainComponent() {
     settingsManager->saveConfig();
 }
 
+juce::Point<int> MainComponent::getSavedWindowSize() const {
+  if (settingsManager)
+    return {settingsManager->getWindowWidth(),
+            settingsManager->getWindowHeight()};
+  return {WindowSizing::kDefaultWidth, WindowSizing::kDefaultHeight};
+}
+
 void MainComponent::paint(juce::Graphics &g) {
   g.fillAll(juce::Colour(APP_COLOR_BACKGROUND));
 }
@@ -330,6 +338,9 @@ void MainComponent::resized() {
 
   // Workspace takes remaining space (includes piano roll, panels, and sidebar)
   workspace.setBounds(bounds);
+
+  if (enableAudioDeviceFlag && settingsManager)
+    settingsManager->setWindowSize(getWidth(), getHeight());
 }
 
 void MainComponent::mouseDown(const juce::MouseEvent &e) {

@@ -58,6 +58,7 @@ public:
   Project *getProject() { return project.get(); }
   Vocoder *getVocoder() { return vocoder.get(); }
   ToolbarComponent &getToolbar() { return toolbar; }
+  juce::Point<int> getSavedWindowSize() const;
 
   // Check if ARA mode is active (for UI display)
   bool isARAModeActive() const;

@@ -8,6 +8,7 @@
 #include "Utils/Constants.h"
 #include "Utils/Localization.h"
 #include "Utils/PlatformUtils.h"
+#include "Utils/WindowSizing.h"
 
 #if JUCE_WINDOWS
 #include <dwmapi.h>
@@ -81,9 +82,26 @@ public:
       // Now add to desktop after all properties are set
       addToDesktop();
 
-      LOG("MainWindow: centreWithSize " + juce::String(getWidth()) + "x" +
+      auto *display = WindowSizing::getDisplayForComponent(this);
+      auto constraints = WindowSizing::Constraints();
+      auto desiredSize = content->getSavedWindowSize();
+      if (desiredSize.x <= 0 || desiredSize.y <= 0)
+        desiredSize = {WindowSizing::kDefaultWidth, WindowSizing::kDefaultHeight};
+
+      if (display != nullptr) {
+        auto initialBounds = WindowSizing::getInitialBounds(
+            desiredSize.x, desiredSize.y, *display, constraints);
+        auto maxBounds = WindowSizing::getMaxBounds(*display);
+        setBounds(initialBounds);
+        setResizeLimits(constraints.minWidth, constraints.minHeight,
+                        maxBounds.getWidth(), maxBounds.getHeight());
+      } else {
+        setSize(desiredSize.x, desiredSize.y);
+        centreWithSize(getWidth(), getHeight());
+      }
+
+      LOG("MainWindow: initial size " + juce::String(getWidth()) + "x" +
           juce::String(getHeight()));
-      centreWithSize(getWidth(), getHeight());
       setVisible(true);
       LOG("MainWindow: setVisible(true) done");
 

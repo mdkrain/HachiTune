@@ -1,6 +1,7 @@
 #include "PluginEditor.h"
 #include "../UI/StyledComponents.h"
 #include "../Utils/AppLogger.h"
+#include "../Utils/WindowSizing.h"
 #include "HostCompatibility.h"
 
 #if JucePlugin_Enable_ARA
@@ -30,7 +31,16 @@ HachiTuneAudioProcessorEditor::HachiTuneAudioProcessorEditor(
 
   setupCallbacks();
 
-  setSize(1400, 900);
+  auto *display = WindowSizing::getDisplayForComponent(this);
+  auto constraints = WindowSizing::Constraints();
+  if (display != nullptr) {
+    auto size = WindowSizing::getClampedSize(WindowSizing::kDefaultWidth,
+                                             WindowSizing::kDefaultHeight,
+                                             *display, constraints);
+    setSize(size.x, size.y);
+  } else {
+    setSize(WindowSizing::kDefaultWidth, WindowSizing::kDefaultHeight);
+  }
   setResizable(true, true);
 }
 
