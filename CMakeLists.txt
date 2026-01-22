@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.22)
 project(HachiTune VERSION 1.0.0)
 
 include(FetchContent)
+include(cmake/Asio.cmake)
 
 # ONNX Runtime configuration
 option(USE_GPU "Enable GPU acceleration for ONNX Runtime (not supported on macOS)" OFF)
@@ -9,6 +10,7 @@ option(USE_CUDA "Enable CUDA execution provider" OFF)
 option(USE_DIRECTML "Enable DirectML execution provider (Windows only)" OFF)
 option(USE_BUNDLED_CUDA_RUNTIME "Bundle minimal CUDA runtime DLLs (Windows only)" OFF)
 option(USE_BUNDLED_DIRECTML_RUNTIME "Bundle DirectML runtime DLL (Windows only)" OFF)
+option(USE_ASIO "Enable ASIO support (Windows only)" OFF)
 set(CUDA_REDIST_URL "" CACHE STRING "Optional URL to download CUDA runtime redistributable zip")
 set(DIRECTML_REDIST_URL "" CACHE STRING "Optional URL to download DirectML redistributable zip")
 set(ONNXRUNTIME_VERSION "1.17.3" CACHE STRING "ONNX Runtime version")
@@ -30,6 +32,22 @@ endif()
 if(USE_DIRECTML)
     set(USE_GPU ON)
     message(STATUS "USE_DIRECTML=ON -> enabling USE_GPU automatically")
+endif()
+
+set(HACHITUNE_ASIO_ENABLED OFF)
+if(USE_ASIO AND WIN32)
+    hachitune_setup_asio(ASIO_INCLUDE_DIR)
+    set(HACHITUNE_ASIO_ENABLED ON)
+    message(STATUS "ASIO support: ENABLED")
+elseif(USE_ASIO)
+    message(WARNING "USE_ASIO is enabled but ASIO is only supported on Windows")
+endif()
+
+set(HACHITUNE_JUCE_ASIO 0)
+set(HACHITUNE_JUCE_ASIO_EXTERNAL 0)
+if(HACHITUNE_ASIO_ENABLED)
+    set(HACHITUNE_JUCE_ASIO 1)
+    set(HACHITUNE_JUCE_ASIO_EXTERNAL 1)
 endif()
 
 # Check if ONNX Runtime already exists in build directory
@@ -227,6 +245,11 @@ target_link_libraries(HachiTunePlugin PRIVATE
     juce::juce_recommended_config_flags
     juce::juce_recommended_lto_flags
     juce::juce_recommended_warning_flags)
+
+if(HACHITUNE_ASIO_ENABLED)
+    target_include_directories(HachiTune PRIVATE ${ASIO_INCLUDE_DIR})
+    target_include_directories(HachiTunePlugin PRIVATE ${ASIO_INCLUDE_DIR})
+endif()
 
 # Link ONNX Runtime if found
 if(ONNXRUNTIME_FOUND)
@@ -502,13 +525,15 @@ if(WIN32)
         NOMINMAX
         JUCE_WASAPI=1
         JUCE_DIRECTSOUND=1
-        JUCE_ASIO=0)
+        JUCE_ASIO=${HACHITUNE_JUCE_ASIO}
+        JUCE_ASIO_USE_EXTERNAL_SDK=${HACHITUNE_JUCE_ASIO_EXTERNAL})
 
     target_compile_definitions(HachiTunePlugin PRIVATE
         NOMINMAX
         JUCE_WASAPI=1
         JUCE_DIRECTSOUND=1
-        JUCE_ASIO=0)
+        JUCE_ASIO=${HACHITUNE_JUCE_ASIO}
+        JUCE_ASIO_USE_EXTERNAL_SDK=${HACHITUNE_JUCE_ASIO_EXTERNAL})
 elseif(APPLE)
     target_compile_definitions(HachiTune PRIVATE
         JUCE_COREAUDIO=1)

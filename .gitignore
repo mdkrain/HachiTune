@@ -39,3 +39,5 @@ Resources/models/*.bin
 tempcalude-*
 .claude
 .cache
+
+third_party/ASIOSDK/

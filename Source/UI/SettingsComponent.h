@@ -78,6 +78,7 @@ private:
   juce::Label audioSectionLabel;
   juce::Label audioDeviceTypeLabel;
   StyledComboBox audioDeviceTypeComboBox;
+  juce::Array<juce::AudioIODeviceType *> audioDeviceTypeOrder;
   juce::Label audioOutputLabel;
   StyledComboBox audioOutputComboBox;
   juce::Label sampleRateLabel;

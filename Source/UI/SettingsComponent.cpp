@@ -289,10 +289,10 @@ void SettingsComponent::comboBoxChanged(juce::ComboBox *comboBox) {
     if (onPitchDetectorChanged)
       onPitchDetectorChanged(pitchDetectorType);
   } else if (comboBox == &audioDeviceTypeComboBox) {
-    auto &types = deviceManager->getAvailableDeviceTypes();
     int idx = audioDeviceTypeComboBox.getSelectedId() - 1;
-    if (idx >= 0 && idx < types.size()) {
-      deviceManager->setCurrentAudioDeviceType(types[idx]->getTypeName(), true);
+    if (idx >= 0 && idx < audioDeviceTypeOrder.size()) {
+      deviceManager->setCurrentAudioDeviceType(
+          audioDeviceTypeOrder.getReference(idx)->getTypeName(), true);
       updateAudioOutputDevices();
     }
   } else if (comboBox == &audioOutputComboBox) {
@@ -649,13 +649,28 @@ void SettingsComponent::updateAudioDeviceTypes() {
     return;
 
   audioDeviceTypeComboBox.clear();
+  audioDeviceTypeOrder.clear();
+
   auto &types = deviceManager->getAvailableDeviceTypes();
-  for (int i = 0; i < types.size(); ++i)
-    audioDeviceTypeComboBox.addItem(types[i]->getTypeName(), i + 1);
+  juce::AudioIODeviceType *asioType = nullptr;
+  for (int i = 0; i < types.size(); ++i) {
+    if (types[i]->getTypeName() == "ASIO") {
+      asioType = types[i];
+    } else {
+      audioDeviceTypeOrder.add(types[i]);
+    }
+  }
+
+  if (asioType != nullptr)
+    audioDeviceTypeOrder.insert(0, asioType);
+
+  for (int i = 0; i < audioDeviceTypeOrder.size(); ++i)
+    audioDeviceTypeComboBox.addItem(
+        audioDeviceTypeOrder[i]->getTypeName(), i + 1);
 
   if (auto *currentType = deviceManager->getCurrentDeviceTypeObject()) {
-    for (int i = 0; i < types.size(); ++i) {
-      if (types[i] == currentType) {
+    for (int i = 0; i < audioDeviceTypeOrder.size(); ++i) {
+      if (audioDeviceTypeOrder[i] == currentType) {
         audioDeviceTypeComboBox.setSelectedId(i + 1,
                                               juce::dontSendNotification);
         break;
