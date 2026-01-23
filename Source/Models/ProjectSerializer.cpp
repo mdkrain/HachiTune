@@ -36,6 +36,14 @@ juce::var ProjectSerializer::toJson(const Project& project) {
     obj->setProperty("formantShift", project.getFormantShift());
     obj->setProperty("volume", project.getVolume());
 
+    // Loop range
+    const auto& loopRange = project.getLoopRange();
+    auto* loopObj = new juce::DynamicObject();
+    loopObj->setProperty("enabled", loopRange.enabled);
+    loopObj->setProperty("start", loopRange.startSeconds);
+    loopObj->setProperty("end", loopRange.endSeconds);
+    obj->setProperty("loop", juce::var(loopObj));
+
     // Notes array
     juce::Array<juce::var> notesArray;
     for (const auto& note : project.getNotes()) {
@@ -65,6 +73,15 @@ bool ProjectSerializer::fromJson(Project& project, const juce::var& json) {
     project.setGlobalPitchOffset(static_cast<float>(json.getProperty("globalPitchOffset", 0.0)));
     project.setFormantShift(static_cast<float>(json.getProperty("formantShift", 0.0)));
     project.setVolume(static_cast<float>(json.getProperty("volume", 0.0)));
+
+    // Loop range
+    auto loopVar = json.getProperty("loop", juce::var());
+    if (loopVar.isObject()) {
+        const double loopStart = loopVar.getProperty("start", 0.0);
+        const double loopEnd = loopVar.getProperty("end", 0.0);
+        project.setLoopRange(loopStart, loopEnd);
+        project.setLoopEnabled(loopVar.getProperty("enabled", false));
+    }
 
     // Notes
     project.clearNotes();

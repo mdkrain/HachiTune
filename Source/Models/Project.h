@@ -34,6 +34,18 @@ struct AudioData
 };
 
 /**
+ * Loop playback range in seconds.
+ */
+struct LoopRange
+{
+    double startSeconds = 0.0;
+    double endSeconds = 0.0;
+    bool enabled = false;
+
+    bool isValid() const { return enabled && endSeconds > startSeconds; }
+};
+
+/**
  * Project data container.
  */
 class Project
@@ -101,6 +113,12 @@ public:
     bool isModified() const { return modified; }
     void setModified(bool mod) { modified = mod; }
 
+    // Loop range
+    const LoopRange& getLoopRange() const { return loopRange; }
+    void setLoopRange(double startSeconds, double endSeconds);
+    void setLoopEnabled(bool enabled);
+    void clearLoopRange();
+
 private:
     juce::String name = "Untitled";
     juce::File filePath;
@@ -118,4 +136,6 @@ private:
     int f0DirtyEnd = -1;
     
     bool modified = false;
+
+    LoopRange loopRange;
 };

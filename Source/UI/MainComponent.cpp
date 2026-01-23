@@ -202,6 +202,19 @@ MainComponent::MainComponent(bool enableAudioDevice)
   };
   toolbar.onZoomChanged = [this](float pps) { onZoomChanged(pps); };
   toolbar.onEditModeChanged = [this](EditMode mode) { setEditMode(mode); };
+  toolbar.onLoopToggled = [this](bool enabled) {
+    if (!project)
+      return;
+    project->setLoopEnabled(enabled);
+    const auto &loopRange = project->getLoopRange();
+    toolbar.setLoopEnabled(loopRange.enabled);
+    if (audioEngine) {
+      if (loopRange.enabled)
+        audioEngine->setLoopRange(loopRange.startSeconds, loopRange.endSeconds);
+      audioEngine->setLoopEnabled(loopRange.enabled);
+    }
+    pianoRoll.repaint();
+  };
 
   // Plugin mode callbacks
   toolbar.onReanalyze = [this]() {
@@ -229,6 +242,13 @@ MainComponent::MainComponent(bool enableAudioDevice)
       pause();
     else
       play();
+  };
+  pianoRoll.onLoopRangeChanged = [this](const LoopRange &range) {
+    toolbar.setLoopEnabled(range.enabled);
+    if (audioEngine) {
+      audioEngine->setLoopRange(range.startSeconds, range.endSeconds);
+      audioEngine->setLoopEnabled(range.enabled);
+    }
   };
 
   // Setup parameter panel callbacks
@@ -482,6 +502,15 @@ bool MainComponent::keyPressed(const juce::KeyPress &key,
 }
 
 void MainComponent::saveProject() {
+  if (!juce::MessageManager::getInstance()->isThisTheMessageThread()) {
+    juce::Component::SafePointer<MainComponent> safeThis(this);
+    juce::MessageManager::callAsync([safeThis]() {
+      if (safeThis != nullptr)
+        safeThis->saveProject();
+    });
+    return;
+  }
+
   if (!project)
     return;
 
@@ -546,6 +575,15 @@ void MainComponent::saveProject() {
 }
 
 void MainComponent::openFile() {
+  if (!juce::MessageManager::getInstance()->isThisTheMessageThread()) {
+    juce::Component::SafePointer<MainComponent> safeThis(this);
+    juce::MessageManager::callAsync([safeThis]() {
+      if (safeThis != nullptr)
+        safeThis->openFile();
+    });
+    return;
+  }
+
   // Prevent re-triggering while dialog is open
   if (fileChooser != nullptr)
     return;
@@ -712,6 +750,8 @@ void MainComponent::loadAudioFile(const juce::File &file) {
       safeThis->parameterPanel.setProject(safeThis->project.get());
       safeThis->toolbar.setTotalTime(
           safeThis->project->getAudioData().getDuration());
+      safeThis->toolbar.setLoopEnabled(
+          safeThis->project->getLoopRange().enabled);
 
       // Get audio data reference (used in multiple places below)
       auto &audioData = safeThis->project->getAudioData();
@@ -734,6 +774,11 @@ void MainComponent::loadAudioFile(const juce::File &file) {
                        reinterpret_cast<uintptr_t>(engine)));
             try {
               engine->loadWaveform(audioData.waveform, audioData.sampleRate);
+              const auto &loopRange = safeThis->project->getLoopRange();
+              if (loopRange.enabled)
+                engine->setLoopRange(loopRange.startSeconds,
+                                     loopRange.endSeconds);
+              engine->setLoopEnabled(loopRange.enabled);
             } catch (...) {
               DBG("MainComponent::loadAudioFile - EXCEPTION in loadWaveform!");
             }
@@ -1045,6 +1090,15 @@ void MainComponent::analyzeAudio(
 }
 
 void MainComponent::exportFile() {
+  if (!juce::MessageManager::getInstance()->isThisTheMessageThread()) {
+    juce::Component::SafePointer<MainComponent> safeThis(this);
+    juce::MessageManager::callAsync([safeThis]() {
+      if (safeThis != nullptr)
+        safeThis->exportFile();
+    });
+    return;
+  }
+
   if (!project)
     return;
 
@@ -1157,6 +1211,15 @@ void MainComponent::exportFile() {
 }
 
 void MainComponent::exportMidiFile() {
+  if (!juce::MessageManager::getInstance()->isThisTheMessageThread()) {
+    juce::Component::SafePointer<MainComponent> safeThis(this);
+    juce::MessageManager::callAsync([safeThis]() {
+      if (safeThis != nullptr)
+        safeThis->exportMidiFile();
+    });
+    return;
+  }
+
   if (!project)
     return;
 
@@ -1257,6 +1320,16 @@ void MainComponent::play() {
   // Standalone mode: use AudioEngine for playback
   if (!audioEngine)
     return;
+
+  const auto &loopRange = project->getLoopRange();
+  if (loopRange.isValid()) {
+    double position = audioEngine->getPosition();
+    if (position < loopRange.startSeconds || position >= loopRange.endSeconds) {
+      audioEngine->seek(loopRange.startSeconds);
+      pianoRoll.setCursorTime(loopRange.startSeconds);
+      toolbar.setCurrentTime(loopRange.startSeconds);
+    }
+  }
 
   isPlaying = true;
   toolbar.setPlaying(true);

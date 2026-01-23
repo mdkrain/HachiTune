@@ -22,7 +22,7 @@ public:
 
     // Mouse handling
     void handleMouseWheel(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel,
-                         int pianoKeysWidth, int timelineHeight, int componentWidth, int componentHeight);
+                         int pianoKeysWidth, int headerHeight, int componentWidth, int componentHeight);
     void handleMagnify(const juce::MouseEvent& e, float scaleFactor, int pianoKeysWidth);
 
     // Programmatic control

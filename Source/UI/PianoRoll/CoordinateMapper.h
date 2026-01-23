@@ -11,6 +11,8 @@ public:
     // Layout constants
     static constexpr int pianoKeysWidth = 60;
     static constexpr int timelineHeight = 24;
+    static constexpr int loopTimelineHeight = 16;
+    static constexpr int headerHeight = timelineHeight + loopTimelineHeight;
 
     CoordinateMapper() = default;
 
@@ -59,7 +61,7 @@ public:
     }
 
     float screenToWorldY(float screenY) const {
-        return screenY - timelineHeight + static_cast<float>(scrollY);
+        return screenY - headerHeight + static_cast<float>(scrollY);
     }
 
     float worldToScreenX(float worldX) const {
@@ -67,7 +69,7 @@ public:
     }
 
     float worldToScreenY(float worldY) const {
-        return worldY + timelineHeight - static_cast<float>(scrollY);
+        return worldY + headerHeight - static_cast<float>(scrollY);
     }
 
     // Get total content dimensions

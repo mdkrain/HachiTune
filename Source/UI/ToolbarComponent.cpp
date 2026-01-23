@@ -17,6 +17,7 @@ ToolbarComponent::ToolbarComponent()
     auto pitchEditIcon = SvgUtils::loadSvg(BinaryData::pitch_edit_24_filled_svg, BinaryData::pitch_edit_24_filled_svgSize, juce::Colours::white);
     auto scissorsIcon = SvgUtils::loadSvg(BinaryData::scissors_24_filled_svg, BinaryData::scissors_24_filled_svgSize, juce::Colours::white);
     auto followIcon = SvgUtils::loadSvg(BinaryData::follow24filled_svg, BinaryData::follow24filled_svgSize, juce::Colours::white);
+    auto loopIcon = SvgUtils::loadSvg(BinaryData::loop24filled_svg, BinaryData::loop24filled_svgSize, juce::Colours::white);
 
     playButton.setImages(playIcon.get());
     stopButton.setImages(stopIcon.get());
@@ -26,6 +27,7 @@ ToolbarComponent::ToolbarComponent()
     drawModeButton.setImages(pitchEditIcon.get());
     splitModeButton.setImages(scissorsIcon.get());
     followButton.setImages(followIcon.get());
+    loopButton.setImages(loopIcon.get());
 
     // Set edge indent for icon padding (makes icons smaller within button bounds)
     goToStartButton.setEdgeIndent(4);
@@ -36,6 +38,7 @@ ToolbarComponent::ToolbarComponent()
     drawModeButton.setEdgeIndent(6);
     splitModeButton.setEdgeIndent(6);
     followButton.setEdgeIndent(6);
+    loopButton.setEdgeIndent(6);
 
     // Store pause icon for later use
     pauseDrawable = std::move(pauseIcon);
@@ -50,6 +53,7 @@ ToolbarComponent::ToolbarComponent()
     addAndMakeVisible(drawModeButton);
     addAndMakeVisible(splitModeButton);
     addAndMakeVisible(followButton);
+    addAndMakeVisible(loopButton);
 
     // Plugin mode buttons (hidden by default)
     addChildComponent(reanalyzeButton);
@@ -69,6 +73,7 @@ ToolbarComponent::ToolbarComponent()
     drawModeButton.addListener(this);
     splitModeButton.addListener(this);
     followButton.addListener(this);
+    loopButton.addListener(this);
     reanalyzeButton.addListener(this);
 
     // Set localized text (tooltips for icon buttons)
@@ -76,6 +81,7 @@ ToolbarComponent::ToolbarComponent()
     drawModeButton.setTooltip(TR("toolbar.draw"));
     splitModeButton.setTooltip(TR("toolbar.split"));
     followButton.setTooltip(TR("toolbar.follow"));
+    loopButton.setTooltip(TR("toolbar.loop"));
     reanalyzeButton.setButtonText(TR("toolbar.reanalyze"));
     zoomLabel.setText(TR("toolbar.zoom"), juce::dontSendNotification);
 
@@ -86,6 +92,7 @@ ToolbarComponent::ToolbarComponent()
     // Set default active states
     selectModeButton.setActive(true);
     followButton.setActive(true);  // Follow is on by default
+    loopButton.setActive(false);
 
     // Time label with app font (larger and bold for readability)
     addAndMakeVisible(timeLabel);
@@ -166,7 +173,7 @@ void ToolbarComponent::resized()
     // Calculate center section width for centering
     const int toolButtonSize = 32;
     const int toolContainerPadding = 4;
-    const int numToolButtons = pluginMode ? 3 : 4;
+    const int numToolButtons = pluginMode ? 3 : 5;
     const int toolContainerWidth = toolButtonSize * numToolButtons + toolContainerPadding * 2;
     const int playbackWidth = pluginMode ? 200 : 120;
     const int timeWidth = 160;
@@ -228,6 +235,11 @@ void ToolbarComponent::resized()
     toolX += toolButtonSize;
     if (!pluginMode)
         followButton.setBounds(toolX, toolArea.getY(), toolButtonSize, toolArea.getHeight());
+    if (!pluginMode)
+    {
+        toolX += toolButtonSize;
+        loopButton.setBounds(toolX, toolArea.getY(), toolButtonSize, toolArea.getHeight());
+    }
 
     currentX += toolContainerWidth + centerGap;
 
@@ -281,6 +293,13 @@ void ToolbarComponent::buttonClicked(juce::Button* button)
         followPlayback = !followPlayback;
         followButton.setActive(followPlayback);
     }
+    else if (button == &loopButton)
+    {
+        loopEnabled = !loopEnabled;
+        loopButton.setActive(loopEnabled);
+        if (onLoopToggled)
+            onLoopToggled(loopEnabled);
+    }
 }
 
 void ToolbarComponent::sliderValueChanged(juce::Slider* slider)
@@ -319,6 +338,12 @@ void ToolbarComponent::setZoom(float pixelsPerSecond)
 {
     // Update slider without triggering callback
     zoomSlider.setValue(pixelsPerSecond, juce::dontSendNotification);
+}
+
+void ToolbarComponent::setLoopEnabled(bool enabled)
+{
+    loopEnabled = enabled;
+    loopButton.setActive(loopEnabled);
 }
 
 void ToolbarComponent::showProgress(const juce::String& message)
@@ -419,6 +444,7 @@ void ToolbarComponent::setPluginMode(bool isPlugin)
 
     // In plugin mode, hide follow button (host controls playback)
     followButton.setVisible(!isPlugin);
+    loopButton.setVisible(!isPlugin);
 
     resized();
 }
