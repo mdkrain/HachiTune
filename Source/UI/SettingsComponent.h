@@ -46,6 +46,7 @@ public:
   std::function<void()> onSettingsChanged;
   std::function<void()> onLanguageChanged;
   std::function<void(PitchDetectorType)> onPitchDetectorChanged;
+  std::function<bool()> canChangeDevice;
 
   // Load/save settings
   void loadSettings();
@@ -108,7 +109,10 @@ private:
   juce::String cachedDeviceTypeName;
 
   juce::String currentDevice = "CPU";
+  bool hasLoadedSettings = false;
   int gpuDeviceId = 0;
+  juce::String lastConfirmedDevice = "CPU";
+  int lastConfirmedGpuDeviceId = 0;
   PitchDetectorType pitchDetectorType = PitchDetectorType::RMVPE;
   SettingsTab activeTab = SettingsTab::General;
   juce::TextButton generalTabButton;

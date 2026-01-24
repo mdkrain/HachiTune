@@ -7,8 +7,43 @@
 #endif
 
 #ifdef _WIN32
+#include <dxgi1_2.h>
 #include <windows.h>
 #endif
+
+namespace {
+#ifdef _WIN32
+juce::StringArray getDxgiAdapterNames() {
+  juce::StringArray names;
+  IDXGIFactory1 *factory = nullptr;
+  if (FAILED(CreateDXGIFactory1(__uuidof(IDXGIFactory1),
+                                reinterpret_cast<void **>(&factory))) ||
+      factory == nullptr) {
+    return names;
+  }
+
+  for (UINT i = 0;; ++i) {
+    IDXGIAdapter1 *adapter = nullptr;
+    const auto hr = factory->EnumAdapters1(i, &adapter);
+    if (hr == DXGI_ERROR_NOT_FOUND)
+      break;
+    if (FAILED(hr) || adapter == nullptr)
+      continue;
+
+    DXGI_ADAPTER_DESC1 desc{};
+    if (SUCCEEDED(adapter->GetDesc1(&desc))) {
+      if ((desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) == 0) {
+        names.add(juce::String(desc.Description));
+      }
+    }
+    adapter->Release();
+  }
+
+  factory->Release();
+  return names;
+}
+#endif
+} // namespace
 
 //==============================================================================
 // SettingsComponent
@@ -79,7 +114,6 @@ SettingsComponent::SettingsComponent(
 
   deviceComboBox.addListener(this);
   addAndMakeVisible(deviceComboBox);
-  updateDeviceList();
 
   // GPU device ID selection
   gpuDeviceLabel.setText(TR("settings.gpu_device"), juce::dontSendNotification);
@@ -170,6 +204,7 @@ SettingsComponent::SettingsComponent(
 
   // Load saved settings
   loadSettings();
+  updateDeviceList();
 
   updateTabButtonStyles();
   updateTabVisibility();
@@ -312,6 +347,26 @@ void SettingsComponent::comboBoxChanged(juce::ComboBox *comboBox) {
     if (onLanguageChanged)
       onLanguageChanged();
   } else if (comboBox == &deviceComboBox) {
+    if (canChangeDevice && !canChangeDevice()) {
+      for (int i = 0; i < deviceComboBox.getNumItems(); ++i) {
+        if (deviceComboBox.getItemText(i) == lastConfirmedDevice) {
+          deviceComboBox.setSelectedItemIndex(i,
+                                              juce::dontSendNotification);
+          break;
+        }
+      }
+      currentDevice = lastConfirmedDevice;
+      updateGPUDeviceList(currentDevice);
+      gpuDeviceComboBox.setSelectedId(lastConfirmedGpuDeviceId + 1,
+                                      juce::dontSendNotification);
+      infoLabel.setText(
+          "Inference in progress. Stop it to switch device.",
+          juce::dontSendNotification);
+      updateTabVisibility();
+      resized();
+      return;
+    }
+
     currentDevice = deviceComboBox.getText();
 
     // Show/hide GPU device selector based on device type
@@ -339,11 +394,23 @@ void SettingsComponent::comboBoxChanged(juce::ComboBox *comboBox) {
 
     if (onSettingsChanged)
       onSettingsChanged();
+
+    lastConfirmedDevice = currentDevice;
+    lastConfirmedGpuDeviceId = gpuDeviceId;
   } else if (comboBox == &gpuDeviceComboBox) {
+    if (canChangeDevice && !canChangeDevice()) {
+      gpuDeviceComboBox.setSelectedId(lastConfirmedGpuDeviceId + 1,
+                                      juce::dontSendNotification);
+      infoLabel.setText(
+          "Inference in progress. Stop it to switch device.",
+          juce::dontSendNotification);
+      return;
+    }
     gpuDeviceId = gpuDeviceComboBox.getSelectedId() - 1;
     saveSettings();
     if (onSettingsChanged)
       onSettingsChanged();
+    lastConfirmedGpuDeviceId = gpuDeviceId;
   } else if (comboBox == &pitchDetectorComboBox) {
     int selectedId = pitchDetectorComboBox.getSelectedId();
     if (selectedId == 1)
@@ -449,8 +516,8 @@ void SettingsComponent::updateDeviceList() {
   auto devices = getAvailableDevices();
   int selectedIndex = 0;
 
-  // Auto-select based on compile-time flags
-  if (currentDevice == "CPU") {
+  // Auto-select based on compile-time flags (first run only)
+  if (!hasLoadedSettings && currentDevice == "CPU") {
 #ifdef USE_DIRECTML
     // If DirectML is compiled in, default to DirectML
     for (int i = 0; i < devices.size(); ++i) {
@@ -503,6 +570,7 @@ void SettingsComponent::updateGPUDeviceList(const juce::String &deviceType) {
 #ifdef USE_CUDA
     int deviceCount = 0;
     bool devicesDetected = false;
+    juce::StringArray cudaDeviceNames;
 
     // Try to load CUDA runtime library to get actual device count and names
 #ifdef _WIN32
@@ -561,7 +629,7 @@ void SettingsComponent::updateGPUDeviceList(const juce::String &deviceType) {
               }
             }
 
-            gpuDeviceComboBox.addItem(deviceName, deviceId + 1);
+            cudaDeviceNames.add(deviceName + " (CUDA)");
           }
           devicesDetected = true;
         } else {
@@ -574,8 +642,21 @@ void SettingsComponent::updateGPUDeviceList(const juce::String &deviceType) {
     }
 #endif
 
+    if (devicesDetected && cudaDeviceNames.size() > 0) {
+      for (int i = 0; i < cudaDeviceNames.size(); ++i)
+        gpuDeviceComboBox.addItem(cudaDeviceNames[i], i + 1);
+    } else {
+#ifdef _WIN32
+      auto dxgiNames = getDxgiAdapterNames();
+      if (dxgiNames.size() > 0) {
+        for (int i = 0; i < dxgiNames.size(); ++i)
+          gpuDeviceComboBox.addItem(dxgiNames[i] + " (DXGI)", i + 1);
+      }
+#endif
+    }
+
     // If no devices detected, add default
-    if (!devicesDetected || gpuDeviceComboBox.getNumItems() == 0) {
+    if (gpuDeviceComboBox.getNumItems() == 0) {
       gpuDeviceComboBox.addItem("GPU 0 (CUDA)", 1);
       DBG("No CUDA devices detected, using default GPU 0");
     }
@@ -587,12 +668,21 @@ void SettingsComponent::updateGPUDeviceList(const juce::String &deviceType) {
 #endif
   } else if (deviceType == "DirectML") {
 #ifdef USE_DIRECTML
-    // DirectML: Most systems have 1 GPU, but we'll check up to 4
-    // DirectML doesn't provide easy enumeration, so we'll use device IDs
-    // In practice, DirectML usually uses device 0
-    for (int deviceId = 0; deviceId < 4; ++deviceId) {
-      gpuDeviceComboBox.addItem("GPU " + juce::String(deviceId) + " (DirectML)",
-                                deviceId + 1);
+    bool addedFromDxgi = false;
+#ifdef _WIN32
+    auto dxgiNames = getDxgiAdapterNames();
+    if (dxgiNames.size() > 0) {
+      for (int i = 0; i < dxgiNames.size(); ++i)
+        gpuDeviceComboBox.addItem(dxgiNames[i] + " (DirectML)", i + 1);
+      addedFromDxgi = true;
+    }
+#endif
+    if (!addedFromDxgi) {
+      // DirectML fallback: provide a small default list
+      for (int deviceId = 0; deviceId < 4; ++deviceId) {
+        gpuDeviceComboBox.addItem(
+            "GPU " + juce::String(deviceId) + " (DirectML)", deviceId + 1);
+      }
     }
 #else
     // DirectML not compiled in
@@ -755,6 +845,10 @@ void SettingsComponent::loadSettings() {
     pitchDetectorComboBox.setSelectedId(1, juce::dontSendNotification);
   else if (pitchDetectorType == PitchDetectorType::FCPE)
     pitchDetectorComboBox.setSelectedId(2, juce::dontSendNotification);
+
+  hasLoadedSettings = true;
+  lastConfirmedDevice = currentDevice;
+  lastConfirmedGpuDeviceId = gpuDeviceId;
 }
 
 void SettingsComponent::saveSettings() {

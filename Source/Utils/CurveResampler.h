@@ -17,4 +17,9 @@ namespace CurveResampler {
   std::vector<std::vector<float>> resampleLinear2D(
       const std::vector<std::vector<float>>& points,
       int targetLength);
+
+  // Resample a 2D curve [T, C] to a target length using nearest-neighbor.
+  std::vector<std::vector<float>> resampleNearest2D(
+      const std::vector<std::vector<float>>& points,
+      int targetLength);
 } // namespace CurveResampler

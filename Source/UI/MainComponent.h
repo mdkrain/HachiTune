@@ -100,6 +100,10 @@ private:
   void reinterpolateUV(int startFrame,
                        int endFrame); // Re-infer UV regions using FCPE
 
+  void reloadInferenceModels(bool async = false);
+  GPUProvider getProviderFromDevice(const juce::String &device) const;
+  bool isInferenceBusy() const;
+
   void loadAudioFile(const juce::File &file);
   void analyzeAudio();
   void analyzeAudio(
@@ -147,6 +151,12 @@ private:
 
   std::unique_ptr<juce::FileChooser> fileChooser;
 
+  juce::File fcpeModelPath;
+  juce::File melFilterbankPath;
+  juce::File centTablePath;
+  juce::File rmvpeModelPath;
+  juce::File someModelPath;
+
   // Original waveform for incremental synthesis
   juce::AudioBuffer<float> originalWaveform;
   bool hasOriginalWaveform = false;
@@ -170,6 +180,9 @@ private:
   // Async render state (plugin mode)
   std::thread renderThread;
   std::atomic<bool> cancelRender{false};
+  std::atomic<bool> isRendering{false};
+  std::atomic<bool> isReloadingModels{false};
+  std::thread modelReloadThread;
 
   // Incremental synthesis coalescing
   std::atomic<bool> pendingIncrementalResynth{false};

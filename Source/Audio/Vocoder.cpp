@@ -569,6 +569,15 @@ void Vocoder::setExecutionDevice(const juce::String &device) {
   }
 }
 
+void Vocoder::setExecutionDeviceId(int deviceId) {
+  if (deviceId < 0)
+    deviceId = 0;
+  if (executionDeviceId != deviceId) {
+    executionDeviceId = deviceId;
+    log("Execution device ID set to: " + std::to_string(deviceId));
+  }
+}
+
 bool Vocoder::reloadModel() {
   if (!modelFile.existsAsFile()) {
     log("Cannot reload: no model file set");
@@ -616,9 +625,10 @@ Ort::SessionOptions Vocoder::createSessionOptions() {
   if (executionDevice == "CUDA") {
     try {
       OrtCUDAProviderOptions cudaOptions{};
-      cudaOptions.device_id = 0;
+      cudaOptions.device_id = executionDeviceId;
       sessionOptions.AppendExecutionProvider_CUDA(cudaOptions);
-      log("CUDA execution provider added");
+      log("CUDA execution provider added (device " +
+          std::to_string(executionDeviceId) + ")");
     } catch (const Ort::Exception &e) {
       log("Failed to add CUDA provider: " + std::string(e.what()));
       log("Falling back to CPU");
@@ -637,8 +647,9 @@ Ort::SessionOptions Vocoder::createSessionOptions() {
       sessionOptions.SetExecutionMode(ORT_SEQUENTIAL);
 
       Ort::ThrowOnError(ortDmlApi->SessionOptionsAppendExecutionProvider_DML(
-          sessionOptions, 0));
-      log("DirectML execution provider added");
+          sessionOptions, executionDeviceId));
+      log("DirectML execution provider added (device " +
+          std::to_string(executionDeviceId) + ")");
     } catch (const Ort::Exception &e) {
       log("Failed to add DirectML provider: " + std::string(e.what()));
       log("Falling back to CPU");

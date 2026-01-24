@@ -341,38 +341,51 @@ public:
                             Note* rightNote,
                             std::vector<float>* deltaPitchArray,
                             std::vector<bool>* voicedMaskArray,
+                            std::vector<std::vector<float>>* melSpectrogram,
                             int rangeStart,
                             int rangeEnd,
                             int oldLeftStart, int oldLeftEnd,
                             int oldRightStart, int oldRightEnd,
                             int newLeftStart, int newLeftEnd,
                             int newRightStart, int newRightEnd,
+                            std::vector<float> oldLeftClip,
+                            std::vector<float> newLeftClip,
+                            std::vector<float> oldRightClip,
+                            std::vector<float> newRightClip,
                             std::vector<float> oldDelta,
                             std::vector<float> newDelta,
                             std::vector<bool> oldVoiced,
                             std::vector<bool> newVoiced,
+                            std::vector<std::vector<float>> oldMel,
+                            std::vector<std::vector<float>> newMel,
                             std::function<void(int, int)> onRangeChanged = nullptr)
         : left(leftNote), right(rightNote),
           deltaPitchArray(deltaPitchArray), voicedMaskArray(voicedMaskArray),
+          melSpectrogram(melSpectrogram),
           rangeStart(rangeStart), rangeEnd(rangeEnd),
           oldLeftStart(oldLeftStart), oldLeftEnd(oldLeftEnd),
           oldRightStart(oldRightStart), oldRightEnd(oldRightEnd),
           newLeftStart(newLeftStart), newLeftEnd(newLeftEnd),
           newRightStart(newRightStart), newRightEnd(newRightEnd),
+          oldLeftClip(std::move(oldLeftClip)),
+          newLeftClip(std::move(newLeftClip)),
+          oldRightClip(std::move(oldRightClip)),
+          newRightClip(std::move(newRightClip)),
           oldDelta(std::move(oldDelta)), newDelta(std::move(newDelta)),
           oldVoiced(std::move(oldVoiced)), newVoiced(std::move(newVoiced)),
+          oldMel(std::move(oldMel)), newMel(std::move(newMel)),
           onRangeChanged(std::move(onRangeChanged)) {}
 
     void undo() override
     {
         applyState(oldLeftStart, oldLeftEnd, oldRightStart, oldRightEnd,
-                   oldDelta, oldVoiced);
+                   oldLeftClip, oldRightClip, oldDelta, oldVoiced, oldMel);
     }
 
     void redo() override
     {
         applyState(newLeftStart, newLeftEnd, newRightStart, newRightEnd,
-                   newDelta, newVoiced);
+                   newLeftClip, newRightClip, newDelta, newVoiced, newMel);
     }
 
     juce::String getName() const override { return "Stretch Note Timing"; }
@@ -380,18 +393,25 @@ public:
 private:
     void applyState(int leftStart, int leftEnd,
                     int rightStart, int rightEnd,
+                    const std::vector<float>& leftClip,
+                    const std::vector<float>& rightClip,
                     const std::vector<float>& delta,
-                    const std::vector<bool>& voiced)
+                    const std::vector<bool>& voiced,
+                    const std::vector<std::vector<float>>& mel)
     {
         if (left) {
             left->setStartFrame(leftStart);
             left->setEndFrame(leftEnd);
             left->markDirty();
+            if (!leftClip.empty())
+                left->setClipWaveform(leftClip);
         }
         if (right) {
             right->setStartFrame(rightStart);
             right->setEndFrame(rightEnd);
             right->markDirty();
+            if (!rightClip.empty())
+                right->setClipWaveform(rightClip);
         }
 
         if (deltaPitchArray && rangeEnd > rangeStart &&
@@ -412,6 +432,15 @@ private:
             }
         }
 
+        if (melSpectrogram && rangeEnd > rangeStart &&
+            mel.size() == static_cast<size_t>(rangeEnd - rangeStart)) {
+            if (melSpectrogram->size() >= static_cast<size_t>(rangeEnd)) {
+                for (int i = rangeStart; i < rangeEnd; ++i)
+                    (*melSpectrogram)[static_cast<size_t>(i)] =
+                        mel[static_cast<size_t>(i - rangeStart)];
+            }
+        }
+
         if (onRangeChanged && rangeEnd > rangeStart)
             onRangeChanged(rangeStart, rangeEnd);
     }
@@ -420,6 +449,7 @@ private:
     Note* right = nullptr;
     std::vector<float>* deltaPitchArray = nullptr;
     std::vector<bool>* voicedMaskArray = nullptr;
+    std::vector<std::vector<float>>* melSpectrogram = nullptr;
     int rangeStart = 0;
     int rangeEnd = 0;
     int oldLeftStart = 0;
@@ -430,10 +460,16 @@ private:
     int newLeftEnd = 0;
     int newRightStart = 0;
     int newRightEnd = 0;
+    std::vector<float> oldLeftClip;
+    std::vector<float> newLeftClip;
+    std::vector<float> oldRightClip;
+    std::vector<float> newRightClip;
     std::vector<float> oldDelta;
     std::vector<float> newDelta;
     std::vector<bool> oldVoiced;
     std::vector<bool> newVoiced;
+    std::vector<std::vector<float>> oldMel;
+    std::vector<std::vector<float>> newMel;
     std::function<void(int, int)> onRangeChanged;
 };
 

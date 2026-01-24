@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../JuceHeader.h"
+#include "FCPEPitchDetector.h"
 #include <vector>
 #include <memory>
 #include <functional>
@@ -28,7 +29,9 @@ public:
     SOMEDetector();
     ~SOMEDetector();
 
-    bool loadModel(const juce::File& modelPath);
+    bool loadModel(const juce::File& modelPath,
+                   GPUProvider provider = GPUProvider::CPU,
+                   int deviceId = 0);
     bool isLoaded() const { return loaded; }
 
     std::vector<NoteEvent> detectNotes(const float* audio, int numSamples, int sampleRate);

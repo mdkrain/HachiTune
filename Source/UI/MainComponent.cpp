@@ -41,69 +41,15 @@ MainComponent::MainComponent(bool enableAudioDevice)
   // Try to load FCPE model
   auto modelsDir = PlatformPaths::getModelsDirectory();
 
-  auto fcpeModelPath = modelsDir.getChildFile("fcpe.onnx");
-  auto melFilterbankPath = modelsDir.getChildFile("mel_filterbank.bin");
-  auto centTablePath = modelsDir.getChildFile("cent_table.bin");
-
-  if (fcpeModelPath.existsAsFile()) {
-    LOG("MainComponent: loading FCPE model...");
-#ifdef USE_DIRECTML
-    if (fcpePitchDetector->loadModel(fcpeModelPath, melFilterbankPath,
-                                     centTablePath, GPUProvider::DirectML))
-#elif defined(USE_CUDA)
-    if (fcpePitchDetector->loadModel(fcpeModelPath, melFilterbankPath,
-                                     centTablePath, GPUProvider::CUDA))
-#elif defined(__APPLE__)
-    if (fcpePitchDetector->loadModel(fcpeModelPath, melFilterbankPath,
-                                     centTablePath, GPUProvider::CoreML))
-#else
-    if (fcpePitchDetector->loadModel(fcpeModelPath, melFilterbankPath,
-                                     centTablePath, GPUProvider::CPU))
-#endif
-    {
-      LOG("FCPE pitch detector loaded successfully");
-    } else {
-      LOG("Failed to load FCPE model");
-    }
-  } else {
-    LOG("FCPE model not found at: " + fcpeModelPath.getFullPathName());
-  }
-
-  // Try to load RMVPE model
-  auto rmvpeModelPath = modelsDir.getChildFile("rmvpe.onnx");
-  if (rmvpeModelPath.existsAsFile()) {
-    LOG("MainComponent: loading RMVPE model...");
-#ifdef USE_DIRECTML
-    if (rmvpePitchDetector->loadModel(rmvpeModelPath, GPUProvider::DirectML))
-#elif defined(USE_CUDA)
-    if (rmvpePitchDetector->loadModel(rmvpeModelPath, GPUProvider::CUDA))
-#elif defined(__APPLE__)
-    if (rmvpePitchDetector->loadModel(rmvpeModelPath, GPUProvider::CoreML))
-#else
-    if (rmvpePitchDetector->loadModel(rmvpeModelPath, GPUProvider::CPU))
-#endif
-    {
-      LOG("RMVPE pitch detector loaded successfully");
-    } else {
-      LOG("Failed to load RMVPE model");
-    }
-  } else {
-    LOG("RMVPE model not found at: " + rmvpeModelPath.getFullPathName());
-  }
+  fcpeModelPath = modelsDir.getChildFile("fcpe.onnx");
+  melFilterbankPath = modelsDir.getChildFile("mel_filterbank.bin");
+  centTablePath = modelsDir.getChildFile("cent_table.bin");
+  rmvpeModelPath = modelsDir.getChildFile("rmvpe.onnx");
+  someModelPath = modelsDir.getChildFile("some.onnx");
 
   // Initialize legacy SOME detector
   someDetector = std::make_unique<SOMEDetector>();
-  auto someModelPath = modelsDir.getChildFile("some.onnx");
-  if (someModelPath.existsAsFile()) {
-    LOG("MainComponent: loading SOME model...");
-    if (someDetector->loadModel(someModelPath)) {
-      LOG("SOME detector loaded successfully");
-    } else {
-      LOG("Failed to load SOME model");
-    }
-  } else {
-    LOG("SOME model not found at: " + someModelPath.getFullPathName());
-  }
+  reloadInferenceModels(false);
 
   LOG("MainComponent: wiring up components...");
   // Wire up modular components (after all detectors are initialized)
@@ -303,6 +249,120 @@ MainComponent::MainComponent(bool enableAudioDevice)
   LOG("MainComponent: constructor complete");
 }
 
+GPUProvider MainComponent::getProviderFromDevice(
+    const juce::String &device) const {
+  if (device == "CUDA")
+    return GPUProvider::CUDA;
+  if (device == "DirectML")
+    return GPUProvider::DirectML;
+  if (device == "CoreML")
+    return GPUProvider::CoreML;
+  if (device.isNotEmpty() && device != "CPU")
+    LOG("Unsupported pitch detector device: " + device + ", using CPU");
+  return GPUProvider::CPU;
+}
+
+void MainComponent::reloadInferenceModels(bool async) {
+  if (!settingsManager)
+    return;
+
+  const auto device = settingsManager->getDevice();
+  const auto provider = getProviderFromDevice(device);
+  int deviceId = settingsManager->getGPUDeviceId();
+  if (deviceId < 0)
+    deviceId = 0;
+
+  auto fcpePath = fcpeModelPath;
+  auto melPath = melFilterbankPath;
+  auto centPath = centTablePath;
+  auto rmvpePath = rmvpeModelPath;
+  auto somePath = someModelPath;
+
+  auto reloadTask = [device, provider, deviceId, fcpePath, melPath, centPath,
+                     rmvpePath, somePath](MainComponent *self) {
+    if (!self)
+      return;
+
+    if (self->fcpePitchDetector) {
+      if (fcpePath.existsAsFile()) {
+        LOG("MainComponent: loading FCPE model (device " + device + ", id " +
+            juce::String(deviceId) + ")...");
+        if (self->fcpePitchDetector->loadModel(fcpePath, melPath, centPath,
+                                               provider, deviceId)) {
+          LOG("FCPE pitch detector loaded successfully");
+        } else {
+          LOG("Failed to load FCPE model");
+        }
+      } else {
+        LOG("FCPE model not found at: " + fcpePath.getFullPathName());
+      }
+    }
+
+    if (self->rmvpePitchDetector) {
+      if (rmvpePath.existsAsFile()) {
+        LOG("MainComponent: loading RMVPE model (device " + device + ", id " +
+            juce::String(deviceId) + ")...");
+        if (self->rmvpePitchDetector->loadModel(rmvpePath, provider,
+                                                deviceId)) {
+          LOG("RMVPE pitch detector loaded successfully");
+        } else {
+          LOG("Failed to load RMVPE model");
+        }
+      } else {
+        LOG("RMVPE model not found at: " + rmvpePath.getFullPathName());
+      }
+    }
+
+    if (self->someDetector) {
+      if (somePath.existsAsFile()) {
+        LOG("MainComponent: loading SOME model (device " + device + ", id " +
+            juce::String(deviceId) + ")...");
+        if (self->someDetector->loadModel(somePath, provider, deviceId)) {
+          LOG("SOME detector loaded successfully");
+        } else {
+          LOG("Failed to load SOME model");
+        }
+      } else {
+        LOG("SOME model not found at: " + somePath.getFullPathName());
+      }
+    }
+  };
+
+  if (!async) {
+    reloadTask(this);
+    return;
+  }
+
+  if (isReloadingModels.exchange(true))
+    return;
+
+  if (modelReloadThread.joinable())
+    modelReloadThread.join();
+
+  juce::Component::SafePointer<MainComponent> safeThis(this);
+  modelReloadThread = std::thread([safeThis, reloadTask]() mutable {
+    if (safeThis == nullptr)
+      return;
+    reloadTask(safeThis.getComponent());
+    if (safeThis != nullptr)
+      safeThis->isReloadingModels = false;
+  });
+}
+
+bool MainComponent::isInferenceBusy() const {
+  if (isLoadingAudio.load())
+    return true;
+  if (audioAnalyzer && audioAnalyzer->isAnalyzing())
+    return true;
+  if (incrementalSynth && incrementalSynth->isSynthesizing())
+    return true;
+  if (isRendering.load())
+    return true;
+  if (isReloadingModels.load())
+    return true;
+  return false;
+}
+
 MainComponent::~MainComponent() {
 #if JUCE_MAC
   juce::MenuBarModel::setMacMainMenu(nullptr);
@@ -312,6 +372,9 @@ MainComponent::~MainComponent() {
 #endif
   removeKeyListener(this);
   stopTimer();
+
+  if (modelReloadThread.joinable())
+    modelReloadThread.join();
 
   cancelLoading = true;
   if (loaderThread.joinable())
@@ -2012,6 +2075,10 @@ void MainComponent::showSettings() {
 
     settingsOverlay->getSettingsComponent()->onSettingsChanged = [this]() {
       settingsManager->applySettings();
+      reloadInferenceModels(true);
+    };
+    settingsOverlay->getSettingsComponent()->canChangeDevice = [this]() {
+      return !isInferenceBusy();
     };
     settingsOverlay->getSettingsComponent()->onPitchDetectorChanged =
         [this](PitchDetectorType type) {
@@ -2319,6 +2386,7 @@ void MainComponent::renderProcessedAudio() {
   cancelRender = true;
   if (renderThread.joinable())
     renderThread.join();
+  isRendering = false;
   cancelRender = false;
 
   // Snapshot required data to avoid accessing Project concurrently from the
@@ -2346,15 +2414,22 @@ void MainComponent::renderProcessedAudio() {
         if (safeThis == nullptr)
           return;
 
+        safeThis->isRendering = true;
+
+        auto finishRendering = [safeThis]() {
+          if (safeThis != nullptr)
+            safeThis->isRendering = false;
+        };
+
         if (cancelRender.load())
-          return;
+          return finishRendering();
 
         if (f0Snapshot.empty() || melSpecSnapshot.empty()) {
           juce::MessageManager::callAsync([safeThis]() {
             if (safeThis != nullptr)
               safeThis->toolbar.hideProgress();
           });
-          return;
+          return finishRendering();
         }
 
         if (voicedMaskSnapshot.size() < f0Snapshot.size())
@@ -2363,20 +2438,20 @@ void MainComponent::renderProcessedAudio() {
         // Apply global pitch offset
         for (size_t i = 0; i < f0Snapshot.size(); ++i) {
           if (cancelRender.load())
-            return;
+            return finishRendering();
           if (voicedMaskSnapshot[i] && f0Snapshot[i] > 0)
             f0Snapshot[i] *= std::pow(2.0f, globalOffset / 12.0f);
         }
 
         if (cancelRender.load())
-          return;
+          return finishRendering();
 
         // Synthesize
         auto synthesized = voc ? voc->infer(melSpecSnapshot, f0Snapshot)
                                : std::vector<float>{};
 
         if (cancelRender.load())
-          return;
+          return finishRendering();
 
         // (Output buffer currently not propagated; we keep behavior: just
         // notify + hide progress)
@@ -2387,6 +2462,8 @@ void MainComponent::renderProcessedAudio() {
               safeThis->toolbar.hideProgress();
               if (ok && onChanged)
                 onChanged();
+              safeThis->isRendering = false;
             });
+        finishRendering();
       });
 }

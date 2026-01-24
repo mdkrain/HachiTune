@@ -158,8 +158,6 @@ private:
     int originalLeftEnd = 0;
     int originalRightStart = 0;
     int originalRightEnd = 0;
-    int rightNoteIndex = -1;
-    int originalLastEnd = 0;
     int rangeStartFull = 0;
     int rangeEndFull = 0;
     int rangeStart = 0;
@@ -174,9 +172,6 @@ private:
     std::vector<float> originalLeftClip;
     std::vector<float> originalRightClip;
     std::vector<std::vector<float>> originalMelRangeFull;
-    std::vector<Note *> rippleNotes;
-    std::vector<int> originalNoteStarts;
-    std::vector<int> originalNoteEnds;
     std::vector<float> originalDeltaRangeFull;
     std::vector<bool> originalVoicedRangeFull;
   };
@@ -313,6 +308,8 @@ private:
   // Mouse drag throttling
   juce::int64 lastDragRepaintTime = 0;
   static constexpr juce::int64 minDragRepaintInterval = 16; // ~60fps max
+  juce::int64 lastStretchPreviewTime = 0;
+  static constexpr juce::int64 minStretchPreviewInterval = 120;
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PianoRollComponent)
 };

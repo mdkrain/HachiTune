@@ -48,6 +48,7 @@ void SettingsManager::applySettings() {
 
   if (vocoder) {
     vocoder->setExecutionDevice(device);
+    vocoder->setExecutionDeviceId(gpuDeviceId);
     if (vocoder->isLoaded())
       vocoder->reloadModel();
   }

@@ -9,7 +9,8 @@
 SOMEDetector::SOMEDetector() = default;
 SOMEDetector::~SOMEDetector() = default;
 
-bool SOMEDetector::loadModel(const juce::File &modelPath) {
+bool SOMEDetector::loadModel(const juce::File &modelPath, GPUProvider provider,
+                             int deviceId) {
 #ifdef HAVE_ONNXRUNTIME
   try {
     onnxEnv =
@@ -21,39 +22,52 @@ bool SOMEDetector::loadModel(const juce::File &modelPath) {
         GraphOptimizationLevel::ORT_ENABLE_ALL);
 
     // Add execution provider based on build configuration
-#ifdef USE_DIRECTML
-    try {
-      const OrtApi &ortApi = Ort::GetApi();
-      const OrtDmlApi *ortDmlApi = nullptr;
-      Ort::ThrowOnError(ortApi.GetExecutionProviderApi(
-          "DML", ORT_API_VERSION, reinterpret_cast<const void **>(&ortDmlApi)));
+#if defined(_WIN32) && defined(USE_DIRECTML)
+    if (provider == GPUProvider::DirectML) {
+      try {
+        const OrtApi &ortApi = Ort::GetApi();
+        const OrtDmlApi *ortDmlApi = nullptr;
+        Ort::ThrowOnError(
+            ortApi.GetExecutionProviderApi(
+                "DML", ORT_API_VERSION,
+                reinterpret_cast<const void **>(&ortDmlApi)));
 
-      sessionOptions.DisableMemPattern();
-      sessionOptions.SetExecutionMode(ORT_SEQUENTIAL);
+        sessionOptions.DisableMemPattern();
+        sessionOptions.SetExecutionMode(ORT_SEQUENTIAL);
 
-      Ort::ThrowOnError(ortDmlApi->SessionOptionsAppendExecutionProvider_DML(
-          sessionOptions, 0));
-      DBG("SOME: DirectML execution provider added");
-    } catch (const Ort::Exception &e) {
-      DBG("SOME: Failed to add DirectML provider, using CPU");
-    }
-#elif defined(USE_CUDA)
-    try {
-      OrtCUDAProviderOptions cudaOptions{};
-      cudaOptions.device_id = 0;
-      sessionOptions.AppendExecutionProvider_CUDA(cudaOptions);
-      DBG("SOME: CUDA execution provider added");
-    } catch (const Ort::Exception &e) {
-      DBG("SOME: Failed to add CUDA provider, using CPU");
-    }
-#elif defined(__APPLE__)
-    try {
-      sessionOptions.AppendExecutionProvider("CoreML");
-      DBG("SOME: CoreML execution provider added");
-    } catch (const Ort::Exception &e) {
-      DBG("SOME: Failed to add CoreML provider, using CPU");
-    }
+        Ort::ThrowOnError(
+            ortDmlApi->SessionOptionsAppendExecutionProvider_DML(
+                sessionOptions, deviceId));
+        DBG("SOME: DirectML execution provider added");
+      } catch (const Ort::Exception &e) {
+        DBG("SOME: Failed to add DirectML provider, using CPU");
+      }
+    } else
 #endif
+#ifdef USE_CUDA
+        if (provider == GPUProvider::CUDA) {
+      try {
+        OrtCUDAProviderOptions cudaOptions{};
+        cudaOptions.device_id = deviceId;
+        sessionOptions.AppendExecutionProvider_CUDA(cudaOptions);
+        DBG("SOME: CUDA execution provider added");
+      } catch (const Ort::Exception &e) {
+        DBG("SOME: Failed to add CUDA provider, using CPU");
+      }
+    } else
+#endif
+        if (provider == GPUProvider::CoreML) {
+      try {
+        sessionOptions.AppendExecutionProvider("CoreML");
+        DBG("SOME: CoreML execution provider added");
+      } catch (const Ort::Exception &e) {
+        DBG("SOME: Failed to add CoreML provider, using CPU");
+      }
+    } else {
+      if (provider != GPUProvider::CPU) {
+        DBG("SOME: Using CPU execution provider");
+      }
+    }
 
 #ifdef _WIN32
     std::wstring modelPathW = modelPath.getFullPathName().toWideCharPointer();

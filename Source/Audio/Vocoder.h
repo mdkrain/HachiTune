@@ -85,6 +85,8 @@ public:
   // Device settings
   void setExecutionDevice(const juce::String &device);
   juce::String getExecutionDevice() const { return executionDevice; }
+  void setExecutionDeviceId(int deviceId);
+  int getExecutionDeviceId() const { return executionDeviceId; }
 
   // Reload model with new settings (call after changing device)
   bool reloadModel();
@@ -113,6 +115,7 @@ private:
 
   juce::File modelFile;
   std::unique_ptr<std::ofstream> logFile;
+  int executionDeviceId = 0;
 
   // Thread safety for async operations
   std::atomic<bool> isShuttingDown{false};
