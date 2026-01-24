@@ -2,7 +2,6 @@
 
 #include "../../JuceHeader.h"
 #include "RoundedCard.h"
-#include "SidebarComponent.h"
 #include "PanelContainer.h"
 #include "DraggablePanel.h"
 
@@ -10,7 +9,6 @@
  * Main workspace component that manages the layout of:
  * - Piano roll (main content area with rounded card)
  * - Panel container (right side panels)
- * - Sidebar (icon buttons for toggling panels)
  */
 class WorkspaceComponent : public juce::Component
 {
@@ -23,13 +21,12 @@ public:
 
     void setMainContent(juce::Component* content);
     void addPanel(const juce::String& id, const juce::String& title,
-                  const juce::String& iconSvg, juce::Component* content,
+                  juce::Component* content,
                   bool initiallyVisible = false);
 
     void showPanel(const juce::String& id, bool show);
     bool isPanelVisible(const juce::String& id) const;
 
-    SidebarComponent& getSidebar() { return sidebar; }
     PanelContainer& getPanelContainer() { return panelContainer; }
     RoundedCard& getMainCard() { return mainCard; }
 
@@ -40,7 +37,6 @@ private:
 
     RoundedCard mainCard;
     PanelContainer panelContainer;
-    SidebarComponent sidebar;
 
     juce::Component* mainContent = nullptr;
     int panelContainerWidth = 280;

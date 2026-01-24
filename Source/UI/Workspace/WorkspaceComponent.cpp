@@ -6,20 +6,9 @@ WorkspaceComponent::WorkspaceComponent()
 
     addAndMakeVisible(mainCard);
     addAndMakeVisible(panelContainer);
-    addAndMakeVisible(sidebar);
 
     // Initially hide panel container (no panels visible)
     panelContainer.setVisible(false);
-
-    // Connect sidebar to panel container
-    sidebar.onPanelToggled = [this](const juce::String& id, bool active)
-    {
-        panelContainer.showPanel(id, active);
-        updatePanelContainerVisibility();
-
-        if (onPanelVisibilityChanged)
-            onPanelVisibilityChanged(id, active);
-    };
 }
 
 void WorkspaceComponent::paint(juce::Graphics& g)
@@ -35,11 +24,7 @@ void WorkspaceComponent::resized()
 
     // Apply top margin first so sidebar aligns with content
     bounds.removeFromTop(topMargin);
-
-    // Sidebar on the right edge (same height as content area)
-    auto sidebarBounds = bounds.removeFromRight(SidebarComponent::sidebarWidth);
-    sidebarBounds.removeFromBottom(margin); // Match bottom margin
-    sidebar.setBounds(sidebarBounds);
+    bounds.removeFromRight(margin); // Outer right padding
 
     // Panel container (if any panels are visible)
     bool hasPanels = false;
@@ -75,12 +60,9 @@ void WorkspaceComponent::setMainContent(juce::Component* content)
 }
 
 void WorkspaceComponent::addPanel(const juce::String& id, const juce::String& title,
-                                   const juce::String& iconSvg, juce::Component* content,
+                                   juce::Component* content,
                                    bool initiallyVisible)
 {
-    // Add button to sidebar
-    sidebar.addButton(id, title, iconSvg);
-
     // Set content size before adding to panel
     if (content != nullptr)
         content->setSize(panelContainerWidth - 32, 500);
@@ -95,17 +77,21 @@ void WorkspaceComponent::addPanel(const juce::String& id, const juce::String& ti
     // Set initial visibility
     if (initiallyVisible)
     {
-        sidebar.setButtonActive(id, true);
         panelContainer.showPanel(id, true);
         updatePanelContainerVisibility();
+
+        if (onPanelVisibilityChanged)
+            onPanelVisibilityChanged(id, true);
     }
 }
 
 void WorkspaceComponent::showPanel(const juce::String& id, bool show)
 {
-    sidebar.setButtonActive(id, show);
     panelContainer.showPanel(id, show);
     updatePanelContainerVisibility();
+
+    if (onPanelVisibilityChanged)
+        onPanelVisibilityChanged(id, show);
 }
 
 bool WorkspaceComponent::isPanelVisible(const juce::String& id) const

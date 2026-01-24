@@ -19,6 +19,9 @@ ToolbarComponent::ToolbarComponent()
     auto scissorsIcon = SvgUtils::loadSvg(BinaryData::scissors_24_filled_svg, BinaryData::scissors_24_filled_svgSize, juce::Colours::white);
     auto followIcon = SvgUtils::loadSvg(BinaryData::follow24filled_svg, BinaryData::follow24filled_svgSize, juce::Colours::white);
     auto loopIcon = SvgUtils::loadSvg(BinaryData::loop24filled_svg, BinaryData::loop24filled_svgSize, juce::Colours::white);
+    const juce::String parametersIconSvg =
+        R"(<svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="2" width="2" height="20" rx="1"/><circle cx="4" cy="9" r="3"/><rect x="11" y="2" width="2" height="20" rx="1"/><circle cx="12" cy="15" r="3"/><rect x="19" y="2" width="2" height="20" rx="1"/><circle cx="20" cy="6" r="3"/></svg>)";
+    auto parametersIcon = SvgUtils::createDrawableFromSvg(parametersIconSvg, juce::Colours::white);
 
     playButton.setImages(playIcon.get());
     stopButton.setImages(stopIcon.get());
@@ -30,6 +33,7 @@ ToolbarComponent::ToolbarComponent()
     splitModeButton.setImages(scissorsIcon.get());
     followButton.setImages(followIcon.get());
     loopButton.setImages(loopIcon.get());
+    parametersButton.setImages(parametersIcon.get());
 
     // Set edge indent for icon padding (makes icons smaller within button bounds)
     goToStartButton.setEdgeIndent(4);
@@ -42,6 +46,7 @@ ToolbarComponent::ToolbarComponent()
     splitModeButton.setEdgeIndent(6);
     followButton.setEdgeIndent(6);
     loopButton.setEdgeIndent(6);
+    parametersButton.setEdgeIndent(6);
 
     // Store pause icon for later use
     pauseDrawable = std::move(pauseIcon);
@@ -58,6 +63,7 @@ ToolbarComponent::ToolbarComponent()
     addAndMakeVisible(splitModeButton);
     addAndMakeVisible(followButton);
     addAndMakeVisible(loopButton);
+    addAndMakeVisible(parametersButton);
 
     // Plugin mode buttons (hidden by default)
     addChildComponent(reanalyzeButton);
@@ -79,6 +85,7 @@ ToolbarComponent::ToolbarComponent()
     splitModeButton.addListener(this);
     followButton.addListener(this);
     loopButton.addListener(this);
+    parametersButton.addListener(this);
     reanalyzeButton.addListener(this);
 
     // Set localized text (tooltips for icon buttons)
@@ -88,6 +95,7 @@ ToolbarComponent::ToolbarComponent()
     splitModeButton.setTooltip(TR("toolbar.split"));
     followButton.setTooltip(TR("toolbar.follow"));
     loopButton.setTooltip(TR("toolbar.loop"));
+    parametersButton.setTooltip(TR("panel.parameters"));
     reanalyzeButton.setButtonText(TR("toolbar.reanalyze"));
     zoomLabel.setText(TR("toolbar.zoom"), juce::dontSendNotification);
 
@@ -99,6 +107,7 @@ ToolbarComponent::ToolbarComponent()
     selectModeButton.setActive(true);
     followButton.setActive(true);  // Follow is on by default
     loopButton.setActive(false);
+    parametersButton.setActive(false);
 
     // Time label with app font (larger and bold for readability)
     addAndMakeVisible(timeLabel);
@@ -185,6 +194,14 @@ void ToolbarComponent::resized()
     const int timeWidth = 160;
     const int centerGap = 16;
     const int centerTotalWidth = playbackWidth + centerGap + toolContainerWidth + centerGap + timeWidth;
+
+    // Right side - parameters button
+    const int rightButtonSize = 28;
+    auto rightButtonArea = bounds.removeFromRight(rightButtonSize + 10);
+    const int rightButtonY =
+        rightButtonArea.getY() + (rightButtonArea.getHeight() - rightButtonSize) / 2;
+    parametersButton.setBounds(rightButtonArea.getX() + 10, rightButtonY,
+                               rightButtonSize, rightButtonSize);
 
     // Right side - status/progress
     auto rightBounds = bounds.removeFromRight(200);
@@ -314,6 +331,13 @@ void ToolbarComponent::buttonClicked(juce::Button* button)
         if (onLoopToggled)
             onLoopToggled(loopEnabled);
     }
+    else if (button == &parametersButton)
+    {
+        parametersVisible = !parametersVisible;
+        parametersButton.setActive(parametersVisible);
+        if (onToggleParameters)
+            onToggleParameters(parametersVisible);
+    }
 }
 
 void ToolbarComponent::sliderValueChanged(juce::Slider* slider)
@@ -359,6 +383,12 @@ void ToolbarComponent::setLoopEnabled(bool enabled)
 {
     loopEnabled = enabled;
     loopButton.setActive(loopEnabled);
+}
+
+void ToolbarComponent::setParametersVisible(bool visible)
+{
+    parametersVisible = visible;
+    parametersButton.setActive(parametersVisible);
 }
 
 void ToolbarComponent::showProgress(const juce::String& message)

@@ -121,12 +121,9 @@ MainComponent::MainComponent(bool enableAudioDevice)
   // Setup workspace with piano roll as main content
   workspace.setMainContent(&pianoRoll);
 
-  // Add parameter panel to workspace sidebar
-  // SVG icon for parameters panel (mixer faders)
-  const juce::String paramIconSvg =
-      R"(<svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="2" width="2" height="20" rx="1"/><circle cx="4" cy="9" r="3"/><rect x="11" y="2" width="2" height="20" rx="1"/><circle cx="12" cy="15" r="3"/><rect x="19" y="2" width="2" height="20" rx="1"/><circle cx="20" cy="6" r="3"/></svg>)";
-  workspace.addPanel("parameters", TR("panel.parameters"), paramIconSvg,
-                     &parameterPanel, true);
+  // Add parameter panel to workspace (visible by default)
+  workspace.addPanel("parameters", TR("panel.parameters"), &parameterPanel,
+                     true);
 
   // Configure toolbar for plugin mode
   if (isPluginMode())
@@ -158,6 +155,9 @@ MainComponent::MainComponent(bool enableAudioDevice)
       audioEngine->setLoopEnabled(loopRange.enabled);
     }
     pianoRoll.repaint();
+  };
+  toolbar.onToggleParameters = [this](bool visible) {
+    workspace.showPanel("parameters", visible);
   };
 
   // Plugin mode callbacks
@@ -211,6 +211,13 @@ MainComponent::MainComponent(bool enableAudioDevice)
       audioEngine->setVolumeDb(dB);
   };
   parameterPanel.setProject(project.get());
+
+  // Sync toolbar toggle with panel visibility
+  toolbar.setParametersVisible(workspace.isPanelVisible("parameters"));
+  workspace.onPanelVisibilityChanged = [this](const juce::String& id, bool visible) {
+    if (id == "parameters")
+      toolbar.setParametersVisible(visible);
+  };
 
   // Setup audio engine callbacks
   if (audioEngine) {

@@ -55,6 +55,7 @@ public:
     void setEditMode(EditMode mode);
     void setZoom(float pixelsPerSecond);  // Update zoom slider without triggering callback
     void setLoopEnabled(bool enabled);
+    void setParametersVisible(bool visible);
     bool isFollowPlayback() const { return followPlayback; }
     bool isLoopEnabled() const { return loopEnabled; }
 
@@ -82,7 +83,7 @@ public:
 
     // Plugin mode callbacks
     std::function<void()> onReanalyze;
-    std::function<void(bool)> onToggleSidebar;  // Called with new visibility state
+    std::function<void(bool)> onToggleParameters;  // Called with new visibility state
     // Note: Removed onRender - Melodyne-style: edits automatically trigger real-time processing
 
 private:
@@ -110,6 +111,7 @@ private:
     ToolButton splitModeButton { "Split" };
     ToolButton followButton { "Follow" };
     ToolButton loopButton { "Loop" };
+    ToolButton parametersButton { "Parameters" };
     juce::Rectangle<int> toolContainerBounds;  // For drawing container background
     
     juce::Label timeLabel;
@@ -127,9 +129,7 @@ private:
     juce::Label statusLabel;
     bool showingStatus = false;
 
-    // Sidebar toggle
-    juce::TextButton sidebarToggleButton { "Menu" };
-    bool sidebarVisible = false;
+    bool parametersVisible = false;
     
     double currentTime = 0.0;
     double totalTime = 0.0;

@@ -15,6 +15,80 @@
 #pragma comment(lib, "dwmapi.lib")
 #endif
 
+class SplashComponent : public juce::Component, private juce::Timer {
+public:
+  SplashComponent() { startTimerHz(30); }
+
+  void paint(juce::Graphics &g) override {
+    auto bounds = getLocalBounds().toFloat();
+    juce::ColourGradient background(
+        juce::Colour(APP_COLOR_BACKGROUND).brighter(0.12f),
+        bounds.getTopLeft(),
+        juce::Colour(APP_COLOR_BACKGROUND).darker(0.12f),
+        bounds.getBottomRight(),
+        false);
+    g.setGradientFill(background);
+    g.fillAll();
+
+    const auto titleFont = AppFont::getBoldFont(34.0f);
+    const auto subtitleFont = AppFont::getFont(15.0f);
+
+    g.setColour(juce::Colours::white);
+    g.setFont(titleFont);
+    g.drawText("HachiTune", getLocalBounds().reduced(24, 20),
+               juce::Justification::centredTop);
+
+    g.setColour(juce::Colour(APP_COLOR_PRIMARY));
+    g.setFont(subtitleFont);
+    g.drawText(TR("progress.loading"), 0, 150, getWidth(), 24,
+               juce::Justification::centredTop);
+
+    const float dotRadius = 5.0f;
+    const float dotSpacing = 14.0f;
+    const float baseY = 190.0f;
+    const float startX = (getWidth() - dotSpacing * 2.0f) * 0.5f;
+
+    for (int i = 0; i < 3; ++i) {
+      const int phase = (tick / 6 + i) % 3;
+      const float alpha = (phase == 0 ? 1.0f : (phase == 1 ? 0.6f : 0.35f));
+      g.setColour(juce::Colour(APP_COLOR_PRIMARY).withAlpha(alpha));
+      g.fillEllipse(startX + dotSpacing * static_cast<float>(i),
+                    baseY - dotRadius, dotRadius * 2.0f, dotRadius * 2.0f);
+    }
+  }
+
+private:
+  void timerCallback() override {
+    ++tick;
+    repaint();
+  }
+
+  int tick = 0;
+};
+
+class SplashWindow : public juce::DocumentWindow {
+public:
+  SplashWindow()
+      : juce::DocumentWindow("",
+                             juce::Colour(APP_COLOR_BACKGROUND),
+                             juce::DocumentWindow::closeButton,
+                             false) {
+    setUsingNativeTitleBar(false);
+    setTitleBarButtonsRequired(0, false);
+    setResizable(false, false);
+    setAlwaysOnTop(true);
+    setOpaque(true);
+
+    auto *content = new SplashComponent();
+    setContentOwned(content, true);
+    setSize(420, 230);
+    centreWithSize(getWidth(), getHeight());
+    setVisible(true);
+  }
+
+  void closeButtonPressed() override {}
+};
+
 class HachiTuneApplication : public juce::JUCEApplication {
 public:
   HachiTuneApplication() {}
@@ -33,9 +107,16 @@ public:
     AppFont::initialize();
     LOG("Loading localization...");
     Localization::loadFromSettings();
-    LOG("Localization loaded, creating MainWindow...");
-    mainWindow = std::make_unique<MainWindow>(getApplicationName());
-    LOG("MainWindow created and visible");
+    LOG("Localization loaded, showing splash...");
+#if JUCE_STANDALONE_APPLICATION
+    splashWindow = std::make_unique<SplashWindow>();
+#endif
+    juce::MessageManager::callAsync([this]() {
+      LOG("Creating MainWindow...");
+      mainWindow = std::make_unique<MainWindow>(getApplicationName());
+      splashWindow = nullptr;
+      LOG("MainWindow created and visible");
+    });
   }
 
   void shutdown() override {
@@ -137,6 +218,9 @@ public:
 
 private:
   std::unique_ptr<MainWindow> mainWindow;
+#if JUCE_STANDALONE_APPLICATION
+  std::unique_ptr<SplashWindow> splashWindow;
+#endif
 };
 
 START_JUCE_APPLICATION(HachiTuneApplication)
