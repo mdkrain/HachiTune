@@ -6,6 +6,7 @@
 #include "../Utils/DrawCurve.h"
 #include "../Utils/BasePitchPreview.h"
 #include "../Utils/UndoManager.h"
+#include "Commands.h"
 #include "PianoRoll/BoxSelector.h"
 #include "PianoRoll/CoordinateMapper.h"
 #include "PianoRoll/NoteSplitter.h"
@@ -35,7 +36,8 @@ enum class EditMode {
  */
 class PianoRollComponent : public juce::Component,
                            public juce::ScrollBar::Listener,
-                           public juce::KeyListener {
+                           public juce::KeyListener,
+                           public juce::ApplicationCommandTarget {
 public:
   PianoRollComponent();
   ~PianoRollComponent() override;
@@ -58,6 +60,12 @@ public:
   // KeyListener
   bool keyPressed(const juce::KeyPress &key,
                   juce::Component *originatingComponent) override;
+
+  // ApplicationCommandTarget interface
+  juce::ApplicationCommandTarget* getNextCommandTarget() override;
+  void getAllCommands(juce::Array<juce::CommandID>& commands) override;
+  void getCommandInfo(juce::CommandID commandID, juce::ApplicationCommandInfo& result) override;
+  bool perform(const ApplicationCommandTarget::InvocationInfo& info) override;
 
   // ScrollBar::Listener
   void scrollBarMoved(juce::ScrollBar *scrollBar,
