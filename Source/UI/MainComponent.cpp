@@ -232,7 +232,6 @@ MainComponent::MainComponent(bool enableAudioDevice)
 
   // Register commands with the command manager
   commandManager->registerAllCommandsForTarget(this);
-  commandManager->registerAllCommandsForTarget(&pianoRoll);
 
   // Add command manager key mappings as a KeyListener
   // This enables automatic keyboard shortcut dispatch
@@ -2456,88 +2455,88 @@ void MainComponent::getCommandInfo(juce::CommandID commandID, juce::ApplicationC
     switch (commandID) {
         // File commands
         case CommandIDs::openFile:
-            result.setInfo("Open File", "Open an audio file", "File", 0);
+            result.setInfo(TR("command.open_audio"), TR("command.open_audio.desp"), "File", 0);
             result.addDefaultKeypress('o', juce::ModifierKeys::ctrlModifier);
             break;
             
         case CommandIDs::saveProject:
-            result.setInfo("Save Project", "Save the current project", "File", 0);
+            result.setInfo(TR("command.save_project"), TR("command.save_project.desp"), "File", 0);
             result.addDefaultKeypress('s', juce::ModifierKeys::ctrlModifier);
             result.setActive(project != nullptr);
             break;
             
         case CommandIDs::exportAudio:
-            result.setInfo("Export Audio", "Export processed audio", "File", 0);
+            result.setInfo(TR("command.export_audio"), TR("command.export_audio.desp"), "File", 0);
             result.addDefaultKeypress('e', juce::ModifierKeys::ctrlModifier);
             result.setActive(project != nullptr);
             break;
             
         case CommandIDs::exportMidi:
-            result.setInfo("Export MIDI", "Export as MIDI file", "File", 0);
+            result.setInfo(TR("command.export_midi"), TR("command.export_midi.desp"), "File", 0);
             result.setActive(project != nullptr);
             break;
             
         // Edit commands
         case CommandIDs::undo:
-            result.setInfo("Undo", "Undo last action", "Edit", 0);
+            result.setInfo(TR("command.undo"), TR("command.undo.desp"), "Edit", 0);
             result.addDefaultKeypress('z', juce::ModifierKeys::ctrlModifier);
             result.setActive(undoManager != nullptr && undoManager->canUndo());
             break;
             
         case CommandIDs::redo:
-            result.setInfo("Redo", "Redo last undone action", "Edit", 0);
+            result.setInfo(TR("command.redo"), TR("command.redo.desp"), "Edit", 0);
             result.addDefaultKeypress('y', juce::ModifierKeys::ctrlModifier);
             result.addDefaultKeypress('z', juce::ModifierKeys::ctrlModifier | juce::ModifierKeys::shiftModifier);
             result.setActive(undoManager != nullptr && undoManager->canRedo());
             break;
             
         case CommandIDs::selectAll:
-            result.setInfo("Select All", "Select all notes", "Edit", 0);
+            result.setInfo(TR("command.select_all"), TR("command.select_all.desp"), "Edit", 0);
             result.addDefaultKeypress('a', juce::ModifierKeys::ctrlModifier);
             result.setActive(project != nullptr);
             break;
             
         // View commands
         case CommandIDs::showSettings:
-            result.setInfo("Settings", "Show settings dialog", "View", 0);
+            result.setInfo(TR("command.settings"), TR("command.settings.desp"), "View", 0);
             result.addDefaultKeypress(',', juce::ModifierKeys::ctrlModifier);
             break;
             
         // Transport commands
         case CommandIDs::playPause:
-            result.setInfo("Play/Pause", "Toggle playback", "Transport", 0);
+            result.setInfo(TR("command.play_pause"), TR("command.play_pause.desp"), "Transport", 0);
             result.addDefaultKeypress(juce::KeyPress::spaceKey, juce::ModifierKeys::noModifiers);
             result.setActive(project != nullptr);
             break;
             
         case CommandIDs::stop:
-            result.setInfo("Stop", "Stop playback", "Transport", 0);
+            result.setInfo(TR("command.stop"), TR("command.stop.desp"), "Transport", 0);
             result.addDefaultKeypress(juce::KeyPress::escapeKey, juce::ModifierKeys::noModifiers);
             result.setActive(project != nullptr && isPlaying);
             break;
             
         case CommandIDs::goToStart:
-            result.setInfo("Go to Start", "Move cursor to start", "Transport", 0);
+            result.setInfo(TR("command.go_to_start"), TR("command.go_to_start.desp"), "Transport", 0);
             result.addDefaultKeypress(juce::KeyPress::homeKey, juce::ModifierKeys::noModifiers);
             result.setActive(project != nullptr);
             break;
             
         case CommandIDs::goToEnd:
-            result.setInfo("Go to End", "Move cursor to end", "Transport", 0);
+            result.setInfo(TR("command.go_to_end"), TR("command.go_to_end.desp"), "Transport", 0);
             result.addDefaultKeypress(juce::KeyPress::endKey, juce::ModifierKeys::noModifiers);
             result.setActive(project != nullptr);
             break;
             
         // Edit mode commands
         case CommandIDs::toggleDrawMode:
-            result.setInfo("Toggle Draw Mode", "Toggle pitch drawing mode", "Edit Mode", 0);
+            result.setInfo(TR("command.toggle_draw"), TR("command.toggle_draw.desp"), "Edit Mode", 0);
             result.addDefaultKeypress('d', juce::ModifierKeys::noModifiers);
             result.setActive(project != nullptr);
             result.setTicked(pianoRoll.getEditMode() == EditMode::Draw);
             break;
             
         case CommandIDs::exitDrawMode:
-            result.setInfo("Exit Draw Mode", "Exit pitch drawing mode", "Edit Mode", 0);
+            result.setInfo(TR("command.exit_draw"), TR("command.exit_draw.desp"), "Edit Mode", 0);
             result.addDefaultKeypress(juce::KeyPress::escapeKey, juce::ModifierKeys::noModifiers);
             result.setActive(pianoRoll.getEditMode() == EditMode::Draw);
             break;

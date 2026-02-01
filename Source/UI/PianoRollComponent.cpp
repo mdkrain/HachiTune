@@ -3161,25 +3161,3 @@ void PianoRollComponent::drawSelectionRect(juce::Graphics &g) {
   g.setColour(juce::Colour::fromRGBA(0x30, 0x80, 0xFF, 0xC0));
   g.drawRect(rect, 1.0f);
 }
-
-// ApplicationCommandTarget interface implementations
-juce::ApplicationCommandTarget* PianoRollComponent::getNextCommandTarget() {
-    // Chain to parent component (MainComponent)
-    return findFirstTargetParentComponent();
-}
-
-void PianoRollComponent::getAllCommands(juce::Array<juce::CommandID>& commands) {
-    // Will be populated in Step 6
-    juce::ignoreUnused(commands);
-}
-
-void PianoRollComponent::getCommandInfo(juce::CommandID commandID, juce::ApplicationCommandInfo& result) {
-    // Will be populated in Step 6
-    juce::ignoreUnused(commandID, result);
-}
-
-bool PianoRollComponent::perform(const ApplicationCommandTarget::InvocationInfo& info) {
-    // Will be populated in Step 6
-    juce::ignoreUnused(info);
-    return false;
-}
