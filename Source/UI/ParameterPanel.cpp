@@ -6,7 +6,7 @@ ParameterPanel::ParameterPanel()
 {
     // Note info
     addAndMakeVisible(noteInfoLabel);
-    noteInfoLabel.setColour(juce::Label::textColourId, juce::Colours::white);
+    noteInfoLabel.setColour(juce::Label::textColourId, APP_COLOR_TEXT_PRIMARY);
     noteInfoLabel.setText(TR("param.no_selection"), juce::dontSendNotification);
     noteInfoLabel.setJustificationType(juce::Justification::centred);
 
@@ -23,7 +23,7 @@ ParameterPanel::ParameterPanel()
     volumeKnob.setDoubleClickReturnValue(true, 0.0);  // Double-click resets to 0 dB
     volumeKnob.addListener(this);
     volumeKnob.setLookAndFeel(&KnobLookAndFeel::getInstance());
-    volumeValueLabel.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
+    volumeValueLabel.setColour(juce::Label::textColourId, APP_COLOR_TEXT_MUTED);
     volumeValueLabel.setJustificationType(juce::Justification::centred);
     volumeValueLabel.setText("0.0 dB", juce::dontSendNotification);
 
@@ -40,7 +40,7 @@ ParameterPanel::ParameterPanel()
                          &formantSectionLabel, &globalSectionLabel })
     {
         addAndMakeVisible(label);
-        label->setColour(juce::Label::textColourId, juce::Colour(APP_COLOR_PRIMARY));
+        label->setColour(juce::Label::textColourId, APP_COLOR_PRIMARY);
         label->setFont(juce::Font(14.0f, juce::Font::bold));
     }
 
@@ -68,17 +68,17 @@ void ParameterPanel::setupSlider(juce::Slider& slider, juce::Label& label,
     slider.addListener(this);
 
     // Slider track colors - darker background for better contrast
-    slider.setColour(juce::Slider::backgroundColourId, juce::Colour(0xFF1A1A22));
-    slider.setColour(juce::Slider::trackColourId, juce::Colour(APP_COLOR_PRIMARY).withAlpha(0.6f));
-    slider.setColour(juce::Slider::thumbColourId, juce::Colour(APP_COLOR_PRIMARY));
+    slider.setColour(juce::Slider::backgroundColourId, APP_COLOR_SURFACE_ALT);
+    slider.setColour(juce::Slider::trackColourId, APP_COLOR_PRIMARY.withAlpha(0.75f));
+    slider.setColour(juce::Slider::thumbColourId, APP_COLOR_PRIMARY);
 
     // Text box colors - match dark theme with subtle border
-    slider.setColour(juce::Slider::textBoxTextColourId, juce::Colours::white);
-    slider.setColour(juce::Slider::textBoxBackgroundColourId, juce::Colour(0xFF252530));
-    slider.setColour(juce::Slider::textBoxOutlineColourId, juce::Colour(0xFF3D3D47));
-    slider.setColour(juce::Slider::textBoxHighlightColourId, juce::Colour(APP_COLOR_PRIMARY).withAlpha(0.3f));
+    slider.setColour(juce::Slider::textBoxTextColourId, APP_COLOR_TEXT_PRIMARY);
+    slider.setColour(juce::Slider::textBoxBackgroundColourId, APP_COLOR_SURFACE);
+    slider.setColour(juce::Slider::textBoxOutlineColourId, APP_COLOR_BORDER);
+    slider.setColour(juce::Slider::textBoxHighlightColourId, APP_COLOR_PRIMARY.withAlpha(0.3f));
 
-    label.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
+    label.setColour(juce::Label::textColourId, APP_COLOR_TEXT_MUTED);
 }
 
 void ParameterPanel::paint(juce::Graphics& g)

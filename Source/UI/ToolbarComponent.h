@@ -2,6 +2,7 @@
 
 #include "../JuceHeader.h"
 #include "../Utils/Constants.h"
+#include "../Utils/Theme.h"
 
 // Forward declaration - EditMode is defined in PianoRollComponent.h
 enum class EditMode;
@@ -17,14 +18,30 @@ public:
 
     void paint(juce::Graphics& g) override
     {
-        auto bounds = getLocalBounds().toFloat().reduced(2);
+        auto bounds = getLocalBounds().toFloat().reduced(2.0f);
+
         if (isActive)
-            g.setColour(juce::Colour(APP_COLOR_PRIMARY));
+        {
+            juce::ColourGradient activeGradient(
+                APP_COLOR_PRIMARY.withAlpha(0.9f), bounds.getX(), bounds.getY(),
+                APP_COLOR_PRIMARY.darker(0.25f), bounds.getX(), bounds.getBottom(), false);
+            g.setGradientFill(activeGradient);
+            g.fillRoundedRectangle(bounds, 5.0f);
+
+            // Subtle glow
+            g.setColour(APP_COLOR_PRIMARY_GLOW.withAlpha(0.35f));
+            g.drawRoundedRectangle(bounds.expanded(1.5f), 6.0f, 1.5f);
+        }
         else if (isMouseOver())
-            g.setColour(juce::Colour(0xFF4D4D57));
+        {
+            g.setColour(APP_COLOR_SURFACE_RAISED);
+            g.fillRoundedRectangle(bounds, 5.0f);
+        }
         else
+        {
             g.setColour(juce::Colours::transparentBlack);
-        g.fillRoundedRectangle(bounds, 4.0f);
+            g.fillRoundedRectangle(bounds, 5.0f);
+        }
         juce::DrawableButton::paint(g);
     }
 

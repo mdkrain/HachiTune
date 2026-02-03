@@ -2,6 +2,7 @@
 
 #include "../../JuceHeader.h"
 #include "../../Utils/Constants.h"
+#include "../../Utils/Theme.h"
 
 /**
  * A rounded card container component with consistent styling.
@@ -28,8 +29,8 @@ public:
 private:
     juce::Component* contentComponent = nullptr;
     float cornerRadius = 8.0f;
-    juce::Colour backgroundColour { 0xFF2D2D37 };
-    juce::Colour borderColour { 0xFF3A3A45 };
+    juce::Colour backgroundColour { APP_COLOR_SURFACE };
+    juce::Colour borderColour { APP_COLOR_BORDER };
     int padding = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(RoundedCard)

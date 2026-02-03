@@ -13,9 +13,9 @@ void SidebarButton::paint(juce::Graphics& g)
 
     // Background
     if (active)
-        g.setColour(juce::Colour(APP_COLOR_PRIMARY).withAlpha(0.3f));
+        g.setColour(APP_COLOR_PRIMARY.withAlpha(0.35f));
     else if (hovered)
-        g.setColour(juce::Colour(0xFF4D4D57));
+        g.setColour(APP_COLOR_SURFACE_RAISED);
     else
         g.setColour(juce::Colours::transparentBlack);
 
@@ -79,7 +79,10 @@ void SidebarComponent::paint(juce::Graphics& g)
     bounds.removeFromRight(8);
 
     // Background with rounded corners matching panel style
-    g.setColour(juce::Colour(0xFF2D2D37));
+    juce::ColourGradient bgGradient(
+        APP_COLOR_SURFACE_RAISED, bounds.getX(), bounds.getY(),
+        APP_COLOR_SURFACE, bounds.getX(), bounds.getBottom(), false);
+    g.setGradientFill(bgGradient);
     g.fillRoundedRectangle(bounds, 8.0f);
 }
 

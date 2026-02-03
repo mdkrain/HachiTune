@@ -13,7 +13,12 @@ WorkspaceComponent::WorkspaceComponent()
 
 void WorkspaceComponent::paint(juce::Graphics& g)
 {
-    g.fillAll(juce::Colour(0xFF1A1A24));
+    auto bounds = getLocalBounds().toFloat();
+    juce::ColourGradient bgGradient(
+        APP_COLOR_BACKGROUND, bounds.getX(), bounds.getY(),
+        APP_COLOR_SURFACE_ALT, bounds.getX(), bounds.getBottom(), false);
+    g.setGradientFill(bgGradient);
+    g.fillAll();
 }
 
 void WorkspaceComponent::resized()

@@ -1,5 +1,6 @@
 #include "WaveformComponent.h"
 #include "../Utils/Constants.h"
+#include "../Utils/Theme.h"
 
 WaveformComponent::WaveformComponent()
 {
@@ -15,13 +16,13 @@ WaveformComponent::~WaveformComponent()
 void WaveformComponent::paint(juce::Graphics& g)
 {
     // Background
-    g.fillAll(juce::Colour(0xFF16161E));
+    g.fillAll(APP_COLOR_SURFACE_ALT);
     
     drawWaveform(g);
     drawCursor(g);
     
     // Border
-    g.setColour(juce::Colour(0xFF3D3D47));
+    g.setColour(APP_COLOR_BORDER);
     g.drawRect(getLocalBounds());
 }
 
@@ -57,7 +58,7 @@ void WaveformComponent::drawWaveform(juce::Graphics& g)
     // Samples per pixel
     juce::ignoreUnused(startSample, endSample);
     
-    g.setColour(juce::Colour(APP_COLOR_WAVEFORM));
+    g.setColour(APP_COLOR_WAVEFORM);
     
     for (int x = 0; x < bounds.getWidth(); ++x)
     {
@@ -94,7 +95,7 @@ void WaveformComponent::drawCursor(juce::Graphics& g)
 
     if (x >= 0 && x < bounds.getWidth())
     {
-        g.setColour(juce::Colours::white);
+        g.setColour(APP_COLOR_PRIMARY);
         g.fillRect(x - 0.5f, 0.0f, 1.0f, static_cast<float>(bounds.getHeight()));
     }
 }

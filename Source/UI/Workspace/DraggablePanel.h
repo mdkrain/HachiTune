@@ -2,6 +2,7 @@
 
 #include "../../JuceHeader.h"
 #include "../../Utils/Constants.h"
+#include "../../Utils/Theme.h"
 
 class PanelContainer;
 

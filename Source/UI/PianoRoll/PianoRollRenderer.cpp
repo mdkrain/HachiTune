@@ -104,7 +104,7 @@ void PianoRollRenderer::drawBackgroundWaveform(
 
   waveformPath.closeSubPath();
 
-  cacheGraphics.setColour(juce::Colour(APP_COLOR_WAVEFORM));
+  cacheGraphics.setColour(APP_COLOR_WAVEFORM);
   cacheGraphics.fillPath(waveformPath);
 
   // Update cache metadata
@@ -128,8 +128,7 @@ void PianoRollRenderer::drawGrid(juce::Graphics &g, int width, int height) {
   float pixelsPerSemitone = coordMapper->getPixelsPerSemitone();
 
   // Fill black key rows with darker background
-  g.setColour(
-      juce::Colour(0xFF141418)); // Noticeably darker than main background
+  g.setColour(APP_COLOR_SURFACE_ALT);
   for (int midi = MIN_MIDI_NOTE; midi <= MAX_MIDI_NOTE; ++midi) {
     int noteInOctave = midi % 12;
     bool isBlack =
@@ -142,16 +141,16 @@ void PianoRollRenderer::drawGrid(juce::Graphics &g, int width, int height) {
   }
 
   // Horizontal lines (pitch)
-  g.setColour(juce::Colour(APP_COLOR_GRID));
+  g.setColour(APP_COLOR_GRID);
 
   for (int midi = MIN_MIDI_NOTE; midi <= MAX_MIDI_NOTE; ++midi) {
     float y = coordMapper->midiToY(static_cast<float>(midi));
     int noteInOctave = midi % 12;
 
     if (noteInOctave == 0) {
-      g.setColour(juce::Colour(APP_COLOR_GRID_BAR));
+      g.setColour(APP_COLOR_GRID_BAR);
       g.drawHorizontalLine(static_cast<int>(y), 0, totalWidth);
-      g.setColour(juce::Colour(APP_COLOR_GRID));
+      g.setColour(APP_COLOR_GRID);
     } else {
       g.drawHorizontalLine(static_cast<int>(y), 0, totalWidth);
     }
@@ -162,7 +161,7 @@ void PianoRollRenderer::drawGrid(juce::Graphics &g, int width, int height) {
   float pixelsPerBeat = secondsPerBeat * coordMapper->getPixelsPerSecond();
 
   for (float x = 0; x < totalWidth; x += pixelsPerBeat) {
-    g.setColour(juce::Colour(APP_COLOR_GRID));
+    g.setColour(APP_COLOR_GRID);
     g.drawVerticalLine(static_cast<int>(x), 0, totalHeight);
   }
 }
@@ -177,10 +176,10 @@ void PianoRollRenderer::drawTimeline(juce::Graphics &g, int width) {
       width - CoordinateMapper::pianoKeysWidth - scrollBarSize,
       CoordinateMapper::timelineHeight);
 
-  g.setColour(juce::Colour(0xFF1E1E28));
+  g.setColour(APP_COLOR_TIMELINE);
   g.fillRect(timelineArea);
 
-  g.setColour(juce::Colour(APP_COLOR_GRID_BAR));
+  g.setColour(APP_COLOR_GRID_BAR);
   g.drawHorizontalLine(CoordinateMapper::timelineHeight - 1,
                        static_cast<float>(CoordinateMapper::pianoKeysWidth),
                        static_cast<float>(width - scrollBarSize));
@@ -214,7 +213,7 @@ void PianoRollRenderer::drawTimeline(juce::Graphics &g, int width) {
     bool isMajor = std::fmod(time, secondsPerTick * 2.0f) < 0.001f;
     int tickHeight = isMajor ? 8 : 4;
 
-    g.setColour(juce::Colour(APP_COLOR_GRID_BAR));
+    g.setColour(APP_COLOR_GRID_BAR);
     g.drawVerticalLine(
         static_cast<int>(x),
         static_cast<float>(CoordinateMapper::timelineHeight - tickHeight),
@@ -233,7 +232,7 @@ void PianoRollRenderer::drawTimeline(juce::Graphics &g, int width) {
       else
         label = juce::String::formatted("%ds", seconds);
 
-      g.setColour(juce::Colour(0xFFAAAAAA));
+  g.setColour(APP_COLOR_TEXT_MUTED);
       g.drawText(label, static_cast<int>(x) + 3, 2, 50,
                  CoordinateMapper::timelineHeight - 4,
                  juce::Justification::centredLeft, false);
@@ -273,8 +272,8 @@ void PianoRollRenderer::drawNotes(juce::Graphics &g, double visibleStartTime,
     float y = baseGridCenterY + pitchOffsetPixels - h * 0.5f;
 
     juce::Colour noteColor = note.isSelected()
-                                 ? juce::Colour(APP_COLOR_NOTE_SELECTED)
-                                 : juce::Colour(APP_COLOR_NOTE_NORMAL);
+                                 ? APP_COLOR_NOTE_SELECTED
+                                 : APP_COLOR_NOTE_NORMAL;
 
     if (samples && totalSamples > 0 && w > 2.0f) {
       drawNoteWaveform(g, note, x, y, w, h, samples, totalSamples,
@@ -290,8 +289,8 @@ void PianoRollRenderer::drawNoteWaveform(juce::Graphics &g, const Note &note,
                                          float x, float y, float w, float h,
                                          const float *samples, int totalSamples,
                                          int sampleRate) {
-  juce::Colour noteColor = note.isSelected() ? juce::Colour(APP_COLOR_NOTE_SELECTED)
-                                             : juce::Colour(APP_COLOR_NOTE_NORMAL);
+  juce::Colour noteColor = note.isSelected() ? APP_COLOR_NOTE_SELECTED
+                                             : APP_COLOR_NOTE_NORMAL;
 
   int startSample =
       static_cast<int>(framesToSeconds(note.getStartFrame()) * sampleRate);
@@ -409,7 +408,7 @@ void PianoRollRenderer::drawPitchCurves(juce::Graphics &g,
   if (audioData.f0.empty())
     return;
 
-  g.setColour(juce::Colour(APP_COLOR_PITCH_CURVE));
+  g.setColour(APP_COLOR_PITCH_CURVE);
 
   for (const auto &note : project->getNotes()) {
     if (note.isRest())
@@ -468,7 +467,7 @@ void PianoRollRenderer::drawCursor(juce::Graphics &g, double cursorTime,
   float totalHeight =
       (MAX_MIDI_NOTE - MIN_MIDI_NOTE) * coordMapper->getPixelsPerSemitone();
 
-  g.setColour(juce::Colours::white);
+  g.setColour(APP_COLOR_PRIMARY);
   g.fillRect(x - 0.5f, 0.0f, 1.0f, totalHeight);
 }
 
@@ -481,7 +480,7 @@ void PianoRollRenderer::drawPianoKeys(juce::Graphics &g, int height) {
       0, CoordinateMapper::headerHeight, CoordinateMapper::pianoKeysWidth,
       height - CoordinateMapper::headerHeight - scrollBarSize);
 
-  g.setColour(juce::Colour(0xFF1A1A24));
+  g.setColour(APP_COLOR_SURFACE_ALT);
   g.fillRect(keyArea);
 
   static const char *noteNames[] = {"C",  "C#", "D",  "D#", "E",  "F",
@@ -500,9 +499,9 @@ void PianoRollRenderer::drawPianoKeys(juce::Graphics &g, int height) {
          noteInOctave == 8 || noteInOctave == 10);
 
     if (isBlack)
-      g.setColour(juce::Colour(0xFF2D2D37));
+      g.setColour(APP_COLOR_PIANO_BLACK);
     else
-      g.setColour(juce::Colour(0xFF3D3D47));
+      g.setColour(APP_COLOR_PIANO_WHITE);
 
     g.fillRect(0.0f, y,
                static_cast<float>(CoordinateMapper::pianoKeysWidth - 2),
@@ -512,7 +511,8 @@ void PianoRollRenderer::drawPianoKeys(juce::Graphics &g, int height) {
     juce::String noteName =
         juce::String(noteNames[noteInOctave]) + juce::String(octave);
 
-    g.setColour(isBlack ? juce::Colour(0xFFAAAAAA) : juce::Colours::white);
+    g.setColour(isBlack ? APP_COLOR_PIANO_TEXT_DIM
+                        : APP_COLOR_PIANO_TEXT);
     g.setFont(13.0f);
     g.drawText(noteName, CoordinateMapper::pianoKeysWidth - 36,
                static_cast<int>(y), 32, static_cast<int>(pixelsPerSemitone),

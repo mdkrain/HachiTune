@@ -3,6 +3,7 @@
 #include "../Models/ProjectSerializer.h"
 #include "../Utils/AppLogger.h"
 #include "../Utils/Constants.h"
+#include "../Utils/Theme.h"
 #include "../Utils/F0Smoother.h"
 #include "../Utils/Localization.h"
 #include "../Utils/MelSpectrogram.h"
@@ -387,7 +388,7 @@ juce::Point<int> MainComponent::getSavedWindowSize() const {
 }
 
 void MainComponent::paint(juce::Graphics &g) {
-  g.fillAll(juce::Colour(APP_COLOR_BACKGROUND));
+  g.fillAll(APP_COLOR_BACKGROUND);
 }
 
 void MainComponent::resized() {

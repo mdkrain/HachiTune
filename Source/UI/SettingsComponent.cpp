@@ -1,5 +1,6 @@
 #include "SettingsComponent.h"
 #include "../Utils/Constants.h"
+#include "../Utils/Theme.h"
 #include "../Utils/Localization.h"
 
 #ifdef HAVE_ONNXRUNTIME
@@ -57,7 +58,7 @@ SettingsComponent::SettingsComponent(
   setOpaque(false);
 
   auto configureRowLabel = [](juce::Label &label) {
-    label.setColour(juce::Label::textColourId, juce::Colour(0xFFD6D6DE));
+    label.setColour(juce::Label::textColourId, APP_COLOR_TEXT_PRIMARY);
     label.setFont(AppFont::getFont(15.0f));
     label.setJustificationType(juce::Justification::centredLeft);
   };
@@ -65,7 +66,7 @@ SettingsComponent::SettingsComponent(
   // Title
   titleLabel.setText(TR("settings.title"), juce::dontSendNotification);
   titleLabel.setFont(AppFont::getBoldFont(20.0f));
-  titleLabel.setColour(juce::Label::textColourId, juce::Colour(0xFFF0F0F4));
+  titleLabel.setColour(juce::Label::textColourId, APP_COLOR_TEXT_PRIMARY);
   addAndMakeVisible(titleLabel);
 
   auto configureTabButton = [this](juce::TextButton &button) {
@@ -90,7 +91,7 @@ SettingsComponent::SettingsComponent(
                               juce::dontSendNotification);
   generalSectionLabel.setFont(AppFont::getBoldFont(15.0f));
   generalSectionLabel.setColour(juce::Label::textColourId,
-                                juce::Colour(0xFFB8B8C2));
+                                APP_COLOR_TEXT_MUTED);
   addAndMakeVisible(generalSectionLabel);
 
   // Language selection
@@ -144,7 +145,7 @@ SettingsComponent::SettingsComponent(
   addAndMakeVisible(pitchDetectorComboBox);
 
   // Info label
-  infoLabel.setColour(juce::Label::textColourId, juce::Colour(0xFF9A9AA6));
+  infoLabel.setColour(juce::Label::textColourId, APP_COLOR_TEXT_MUTED);
   infoLabel.setFont(AppFont::getFont(13.0f));
   infoLabel.setJustificationType(juce::Justification::topLeft);
   addAndMakeVisible(infoLabel);
@@ -156,7 +157,7 @@ SettingsComponent::SettingsComponent(
     audioSectionLabel.setText(TR("settings.audio"), juce::dontSendNotification);
     audioSectionLabel.setFont(AppFont::getBoldFont(15.0f));
     audioSectionLabel.setColour(juce::Label::textColourId,
-                                juce::Colour(0xFFB8B8C2));
+                                APP_COLOR_TEXT_MUTED);
     addAndMakeVisible(audioSectionLabel);
 
     // Audio device type (driver)
@@ -258,26 +259,34 @@ void SettingsComponent::paint(juce::Graphics &g) {
   rounded.addRoundedRectangle(getLocalBounds().toFloat(), cornerRadius);
   g.reduceClipRegion(rounded);
 
-  g.setColour(juce::Colour(0xFF25252E));
-  g.fillRoundedRectangle(getLocalBounds().toFloat(), cornerRadius);
+  auto bounds = getLocalBounds().toFloat();
+  juce::ColourGradient bgGradient(
+      APP_COLOR_SURFACE_ALT, bounds.getX(), bounds.getY(),
+      APP_COLOR_BACKGROUND, bounds.getX(), bounds.getBottom(), false);
+  g.setGradientFill(bgGradient);
+  g.fillRoundedRectangle(bounds, cornerRadius);
 
   if (!sidebarBounds.isEmpty()) {
-    g.setColour(juce::Colour(0xFF1F1F27));
+    g.setColour(APP_COLOR_SURFACE);
     g.fillRect(sidebarBounds);
-    g.setColour(juce::Colour(0xFF34343E));
+    g.setColour(APP_COLOR_BORDER_SUBTLE);
     g.drawLine((float)sidebarBounds.getRight(), (float)sidebarBounds.getY(),
                (float)sidebarBounds.getRight(),
                (float)sidebarBounds.getBottom(), 1.0f);
   }
 
   if (!cardBounds.isEmpty()) {
-    g.setColour(juce::Colour(0xFF31313B));
-    g.fillRoundedRectangle(cardBounds.toFloat(), 8.0f);
+    auto card = cardBounds.toFloat();
+    juce::ColourGradient cardGradient(
+        APP_COLOR_SURFACE_RAISED, card.getX(), card.getY(),
+        APP_COLOR_SURFACE, card.getX(), card.getBottom(), false);
+    g.setGradientFill(cardGradient);
+    g.fillRoundedRectangle(card, 8.0f);
 
-    g.setColour(juce::Colour(0xFF40404A));
-    g.drawRoundedRectangle(cardBounds.toFloat().reduced(0.5f), 8.0f, 1.0f);
+    g.setColour(APP_COLOR_BORDER);
+    g.drawRoundedRectangle(card.reduced(0.5f), 8.0f, 1.0f);
 
-    g.setColour(juce::Colour(0xFF3A3A45));
+    g.setColour(APP_COLOR_BORDER_SUBTLE);
     for (int i = 0; i < separatorYs.size(); ++i) {
       int y = separatorYs[i];
       g.drawLine((float)cardBounds.getX() + 14.0f, (float)y,
@@ -484,14 +493,14 @@ void SettingsComponent::updateTabButtonStyles() {
   auto applyStyle = [&](juce::TextButton &button, bool isActive) {
     if (isActive) {
       button.setColour(juce::TextButton::buttonColourId,
-                       juce::Colour(APP_COLOR_PRIMARY));
+                       APP_COLOR_PRIMARY);
       button.setColour(juce::TextButton::textColourOffId,
                        juce::Colours::white);
     } else {
       button.setColour(juce::TextButton::buttonColourId,
-                       juce::Colour(0xFF2B2B34));
+                       APP_COLOR_SURFACE);
       button.setColour(juce::TextButton::textColourOffId,
-                       juce::Colour(0xFFC6C6D0));
+                       APP_COLOR_TEXT_MUTED);
     }
   };
 
@@ -1057,11 +1066,11 @@ SettingsOverlay::SettingsOverlay(SettingsManager *settingsManager,
   addAndMakeVisible(settingsComponent.get());
 
   closeButton.setColour(juce::TextButton::buttonColourId,
-                        juce::Colour(0xFF3A3A45));
+                        APP_COLOR_SURFACE);
   closeButton.setColour(juce::TextButton::textColourOffId,
-                        juce::Colour(0xFFD6D6DE));
+                        APP_COLOR_TEXT_PRIMARY);
   closeButton.setColour(juce::TextButton::buttonOnColourId,
-                        juce::Colour(0xFF4A4A55));
+                        APP_COLOR_SURFACE_RAISED);
   closeButton.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
   closeButton.setLookAndFeel(&DarkLookAndFeel::getInstance());
   closeButton.setMouseCursor(juce::MouseCursor::PointingHandCursor);
@@ -1072,10 +1081,10 @@ SettingsOverlay::SettingsOverlay(SettingsManager *settingsManager,
 SettingsOverlay::~SettingsOverlay() { closeButton.setLookAndFeel(nullptr); }
 
 void SettingsOverlay::paint(juce::Graphics &g) {
-  g.fillAll(juce::Colour(0xB0000000));
+  g.fillAll(APP_COLOR_OVERLAY_DIM);
 
   if (!contentBounds.isEmpty()) {
-    juce::DropShadow shadow(juce::Colour(0x90000000), 18, {0, 10});
+    juce::DropShadow shadow(APP_COLOR_OVERLAY_SHADOW, 18, {0, 10});
     shadow.drawForRectangle(g, contentBounds);
   }
 }
@@ -1124,7 +1133,7 @@ void SettingsOverlay::closeIfPossible() {
 
 SettingsDialog::SettingsDialog(SettingsManager *settingsManager,
                                juce::AudioDeviceManager *audioDeviceManager)
-    : DialogWindow("Settings", juce::Colour(APP_COLOR_BACKGROUND), true) {
+    : DialogWindow("Settings", APP_COLOR_BACKGROUND, true) {
   // Set opaque before any other operations - this must be done first
   setOpaque(true);
 
@@ -1157,5 +1166,5 @@ SettingsDialog::SettingsDialog(SettingsManager *settingsManager,
 void SettingsDialog::closeButtonPressed() { setVisible(false); }
 
 void SettingsDialog::paint(juce::Graphics &g) {
-  g.fillAll(juce::Colour(APP_COLOR_BACKGROUND));
+  g.fillAll(APP_COLOR_BACKGROUND);
 }

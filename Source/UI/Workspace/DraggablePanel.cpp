@@ -18,21 +18,31 @@ void DraggablePanel::paint(juce::Graphics& g)
     g.reduceClipRegion(clipPath);
 
     // Content background (full area)
-    g.setColour(juce::Colour(0xFF2D2D37));
+    juce::ColourGradient bodyGradient(
+        APP_COLOR_SURFACE.brighter(0.05f), bounds.getX(), bounds.getY(),
+        APP_COLOR_SURFACE.darker(0.05f), bounds.getX(), bounds.getBottom(), false);
+    g.setGradientFill(bodyGradient);
     g.fillRect(bounds);
 
     // Header background
     auto headerBounds = bounds.removeFromTop(static_cast<float>(headerHeight));
-    g.setColour(juce::Colour(0xFF252530));
+    juce::ColourGradient headerGradient(
+        APP_COLOR_SURFACE_RAISED, headerBounds.getX(), headerBounds.getY(),
+        APP_COLOR_SURFACE, headerBounds.getX(), headerBounds.getBottom(), false);
+    g.setGradientFill(headerGradient);
     g.fillRect(headerBounds);
 
+    // Accent line at the top of header
+    g.setColour(APP_COLOR_PRIMARY.withAlpha(0.5f));
+    g.fillRect(headerBounds.removeFromTop(1.0f));
+
     // Header text
-    g.setColour(juce::Colours::white);
+    g.setColour(APP_COLOR_TEXT_PRIMARY);
     g.setFont(juce::FontOptions(13.0f).withStyle("Bold"));
     g.drawText(title, headerBounds.reduced(12, 0).toNearestInt(), juce::Justification::centredLeft);
 
     // Separator line under header
-    g.setColour(juce::Colour(0xFF3A3A45));
+    g.setColour(APP_COLOR_BORDER_SUBTLE);
     g.drawHorizontalLine(headerHeight - 1, 0, static_cast<float>(getWidth()));
 }
 
@@ -40,7 +50,7 @@ void DraggablePanel::paintOverChildren(juce::Graphics& g)
 {
     // Draw rounded border on top
     auto bounds = getLocalBounds().toFloat();
-    g.setColour(juce::Colour(0xFF3A3A45));
+    g.setColour(APP_COLOR_BORDER);
     g.drawRoundedRectangle(bounds.reduced(0.5f), 8.0f, 1.0f);
 }
 

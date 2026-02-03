@@ -100,8 +100,8 @@ ToolbarComponent::ToolbarComponent()
     zoomLabel.setText(TR("toolbar.zoom"), juce::dontSendNotification);
 
     // Style reanalyze button
-    reanalyzeButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xFF3D3D47));
-    reanalyzeButton.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+    reanalyzeButton.setColour(juce::TextButton::buttonColourId, APP_COLOR_SURFACE);
+    reanalyzeButton.setColour(juce::TextButton::textColourOffId, APP_COLOR_TEXT_PRIMARY);
 
     // Set default active states
     selectModeButton.setActive(true);
@@ -112,7 +112,7 @@ ToolbarComponent::ToolbarComponent()
     // Time label with app font (larger and bold for readability)
     addAndMakeVisible(timeLabel);
     timeLabel.setText("00:00.000 / 00:00.000", juce::dontSendNotification);
-    timeLabel.setColour(juce::Label::textColourId, juce::Colour(0xFFCCCCCC));
+    timeLabel.setColour(juce::Label::textColourId, APP_COLOR_TEXT_PRIMARY);
     timeLabel.setJustificationType(juce::Justification::centred);
     timeLabel.setFont(AppFont::getBoldFont(20.0f));
 
@@ -120,7 +120,7 @@ ToolbarComponent::ToolbarComponent()
     addAndMakeVisible(zoomLabel);
     addAndMakeVisible(zoomSlider);
 
-    zoomLabel.setColour(juce::Label::textColourId, juce::Colours::white);
+    zoomLabel.setColour(juce::Label::textColourId, APP_COLOR_TEXT_PRIMARY);
 
     zoomSlider.setRange(MIN_PIXELS_PER_SECOND, MAX_PIXELS_PER_SECOND, 1.0);
     zoomSlider.setValue(100.0);
@@ -129,23 +129,23 @@ ToolbarComponent::ToolbarComponent()
     zoomSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     zoomSlider.addListener(this);
 
-    zoomSlider.setColour(juce::Slider::backgroundColourId, juce::Colour(0xFF2D2D37));
-    zoomSlider.setColour(juce::Slider::trackColourId, juce::Colour(APP_COLOR_PRIMARY).withAlpha(0.6f));
-    zoomSlider.setColour(juce::Slider::thumbColourId, juce::Colour(APP_COLOR_PRIMARY));
+    zoomSlider.setColour(juce::Slider::backgroundColourId, APP_COLOR_SURFACE_ALT);
+    zoomSlider.setColour(juce::Slider::trackColourId, APP_COLOR_PRIMARY.withAlpha(0.75f));
+    zoomSlider.setColour(juce::Slider::thumbColourId, APP_COLOR_PRIMARY);
 
     // Progress bar (hidden by default)
     addChildComponent(progressBar);
     addChildComponent(progressLabel);
 
-    progressLabel.setColour(juce::Label::textColourId, juce::Colours::white);
+    progressLabel.setColour(juce::Label::textColourId, APP_COLOR_TEXT_PRIMARY);
     progressLabel.setJustificationType(juce::Justification::centredLeft);
-    progressBar.setColour(juce::ProgressBar::foregroundColourId, juce::Colour(APP_COLOR_PRIMARY));
-    progressBar.setColour(juce::ProgressBar::backgroundColourId, juce::Colour(0xFF2D2D37));
+    progressBar.setColour(juce::ProgressBar::foregroundColourId, APP_COLOR_PRIMARY);
+    progressBar.setColour(juce::ProgressBar::backgroundColourId, APP_COLOR_SURFACE_ALT);
     progressBar.setLookAndFeel(&DarkLookAndFeel::getInstance());
     
     // Status label (hidden by default)
     addChildComponent(statusLabel);
-    statusLabel.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
+    statusLabel.setColour(juce::Label::textColourId, APP_COLOR_TEXT_MUTED);
     statusLabel.setJustificationType(juce::Justification::centredLeft);
     statusLabel.setFont(juce::Font(12.0f));
 }
@@ -157,27 +157,48 @@ ToolbarComponent::~ToolbarComponent()
 
 void ToolbarComponent::paint(juce::Graphics& g)
 {
-    g.fillAll(juce::Colour(0xFF1A1A24));
+    auto bounds = getLocalBounds().toFloat();
+    juce::ColourGradient bgGradient(
+        APP_COLOR_SURFACE_ALT, bounds.getX(), bounds.getY(),
+        APP_COLOR_BACKGROUND, bounds.getX(), bounds.getBottom(), false);
+    g.setGradientFill(bgGradient);
+    g.fillAll();
 
     // Draw rounded background for tool buttons container
     if (!toolContainerBounds.isEmpty())
     {
-        g.setColour(juce::Colour(0xFF2D2D37));
-        g.fillRoundedRectangle(toolContainerBounds.toFloat(), 6.0f);
+        auto toolBounds = toolContainerBounds.toFloat();
+        juce::ColourGradient toolGradient(
+            APP_COLOR_SURFACE_RAISED, toolBounds.getX(), toolBounds.getY(),
+            APP_COLOR_SURFACE, toolBounds.getX(), toolBounds.getBottom(), false);
+        g.setGradientFill(toolGradient);
+        g.fillRoundedRectangle(toolBounds, 8.0f);
+        g.setColour(APP_COLOR_BORDER);
+        g.drawRoundedRectangle(toolBounds.reduced(0.5f), 8.0f, 1.0f);
     }
 
     // Draw rounded background for time label
     if (timeLabel.isVisible())
     {
-        g.setColour(juce::Colour(0xFF2D2D37));
-        g.fillRoundedRectangle(timeLabel.getBounds().toFloat(), 6.0f);
+        auto timeBounds = timeLabel.getBounds().toFloat();
+        juce::ColourGradient timeGradient(
+            APP_COLOR_SURFACE_RAISED, timeBounds.getX(), timeBounds.getY(),
+            APP_COLOR_SURFACE, timeBounds.getX(), timeBounds.getBottom(), false);
+        g.setGradientFill(timeGradient);
+        g.fillRoundedRectangle(timeBounds, 8.0f);
+        g.setColour(APP_COLOR_BORDER);
+        g.drawRoundedRectangle(timeBounds.reduced(0.5f), 8.0f, 1.0f);
     }
 
     // Draw rounded background for ARA mode label
     if (pluginMode && araModeLabel.isVisible())
     {
-        g.setColour(juce::Colour(APP_COLOR_PRIMARY));
-        g.fillRoundedRectangle(araModeLabel.getBounds().toFloat(), 8.0f);
+        auto araBounds = araModeLabel.getBounds().toFloat();
+        juce::ColourGradient araGradient(
+            APP_COLOR_PRIMARY, araBounds.getX(), araBounds.getY(),
+            APP_COLOR_PRIMARY.darker(0.2f), araBounds.getX(), araBounds.getBottom(), false);
+        g.setGradientFill(araGradient);
+        g.fillRoundedRectangle(araBounds, 8.0f);
     }
 }
 

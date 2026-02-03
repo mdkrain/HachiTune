@@ -2,6 +2,7 @@
 
 #include "../JuceHeader.h"
 #include "../Utils/Constants.h"
+#include "../Utils/Theme.h"
 #include "../Utils/DPIScaleManager.h"
 #include <cmath>
 
@@ -230,12 +231,12 @@ public:
 
     void applyStyle()
     {
-        setColour(juce::Slider::backgroundColourId, juce::Colour(0xFF2D2D37));
-        setColour(juce::Slider::trackColourId, juce::Colour(APP_COLOR_PRIMARY).withAlpha(0.6f));
-        setColour(juce::Slider::thumbColourId, juce::Colour(APP_COLOR_PRIMARY));
-        setColour(juce::Slider::textBoxTextColourId, juce::Colours::white);
-        setColour(juce::Slider::textBoxBackgroundColourId, juce::Colour(0xFF2D2D37));
-        setColour(juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
+        setColour(juce::Slider::backgroundColourId, APP_COLOR_SURFACE_ALT);
+        setColour(juce::Slider::trackColourId, APP_COLOR_PRIMARY.withAlpha(0.75f));
+        setColour(juce::Slider::thumbColourId, APP_COLOR_PRIMARY);
+        setColour(juce::Slider::textBoxTextColourId, APP_COLOR_TEXT_PRIMARY);
+        setColour(juce::Slider::textBoxBackgroundColourId, APP_COLOR_SURFACE_ALT);
+        setColour(juce::Slider::textBoxOutlineColourId, APP_COLOR_BORDER_SUBTLE);
     }
 };
 
@@ -252,10 +253,10 @@ public:
 
     void applyStyle()
     {
-        setColour(juce::ComboBox::backgroundColourId, juce::Colour(0xFF3D3D47));
-        setColour(juce::ComboBox::textColourId, juce::Colours::white);
-        setColour(juce::ComboBox::outlineColourId, juce::Colour(0xFF4A4A55));
-        setColour(juce::ComboBox::arrowColourId, juce::Colour(APP_COLOR_PRIMARY));
+        setColour(juce::ComboBox::backgroundColourId, APP_COLOR_SURFACE);
+        setColour(juce::ComboBox::textColourId, APP_COLOR_TEXT_PRIMARY);
+        setColour(juce::ComboBox::outlineColourId, APP_COLOR_BORDER);
+        setColour(juce::ComboBox::arrowColourId, APP_COLOR_PRIMARY);
         setLookAndFeel(&DarkLookAndFeel::getInstance());
     }
 
@@ -278,7 +279,7 @@ public:
 
     void applyStyle()
     {
-        setColour(juce::ToggleButton::textColourId, juce::Colours::white);
+        setColour(juce::ToggleButton::textColourId, APP_COLOR_TEXT_PRIMARY);
         setLookAndFeel(&DarkLookAndFeel::getInstance());
     }
 
@@ -297,7 +298,7 @@ public:
     StyledLabel(const juce::String& text = {})
     {
         setText(text, juce::dontSendNotification);
-        setColour(juce::Label::textColourId, juce::Colours::lightgrey);
+        setColour(juce::Label::textColourId, APP_COLOR_TEXT_MUTED);
     }
 };
 
@@ -310,7 +311,7 @@ public:
     SectionLabel(const juce::String& text = {})
     {
         setText(text, juce::dontSendNotification);
-        setColour(juce::Label::textColourId, juce::Colour(APP_COLOR_PRIMARY));
+        setColour(juce::Label::textColourId, APP_COLOR_PRIMARY);
         setFont(juce::Font(14.0f, juce::Font::bold));
     }
 };
@@ -339,7 +340,7 @@ public:
 
         // === Outer track ring ===
         const float trackRadius = radius + 2.0f;
-        g.setColour(juce::Colour(0xFF1E1E26).withAlpha(alpha));
+        g.setColour(APP_COLOR_BORDER.withAlpha(alpha));
         g.drawEllipse(centreX - trackRadius, centreY - trackRadius,
                       trackRadius * 2.0f, trackRadius * 2.0f, 3.0f);
 
@@ -347,19 +348,19 @@ public:
         const float knobRadius = radius * 0.85f;
 
         // Outer shadow
-        g.setColour(juce::Colour(0xFF0A0A0E).withAlpha(alpha * 0.5f));
+        g.setColour(APP_COLOR_KNOB_SHADOW.withAlpha(alpha * 0.5f));
         g.fillEllipse(centreX - knobRadius - 1.0f, centreY - knobRadius + 2.0f,
                       knobRadius * 2.0f + 2.0f, knobRadius * 2.0f + 2.0f);
 
         // Main knob body - gradient from top-left to bottom-right
         juce::ColourGradient bodyGradient(
-            juce::Colour(0xFF5A5A65).withAlpha(alpha), centreX - knobRadius * 0.7f, centreY - knobRadius * 0.7f,
-            juce::Colour(0xFF28282F).withAlpha(alpha), centreX + knobRadius * 0.7f, centreY + knobRadius * 0.7f, false);
+            APP_COLOR_SURFACE_RAISED.withAlpha(alpha), centreX - knobRadius * 0.7f, centreY - knobRadius * 0.7f,
+            APP_COLOR_SURFACE_ALT.withAlpha(alpha), centreX + knobRadius * 0.7f, centreY + knobRadius * 0.7f, false);
         g.setGradientFill(bodyGradient);
         g.fillEllipse(centreX - knobRadius, centreY - knobRadius, knobRadius * 2.0f, knobRadius * 2.0f);
 
         // Inner bevel / rim
-        g.setColour(juce::Colour(0xFF3A3A44).withAlpha(alpha));
+        g.setColour(APP_COLOR_BORDER.withAlpha(alpha));
         g.drawEllipse(centreX - knobRadius + 1.5f, centreY - knobRadius + 1.5f,
                       (knobRadius - 1.5f) * 2.0f, (knobRadius - 1.5f) * 2.0f, 1.0f);
 
@@ -371,7 +372,7 @@ public:
         pointer.startNewSubPath(0.0f, -pointerStartRadius);
         pointer.lineTo(0.0f, -pointerLength);
 
-        g.setColour(juce::Colour(APP_COLOR_PRIMARY).withAlpha(alpha));
+        g.setColour(APP_COLOR_PRIMARY.withAlpha(alpha));
         g.strokePath(pointer, juce::PathStrokeType(3.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded),
                      juce::AffineTransform::rotation(angle).translated(centreX, centreY));
 
@@ -417,9 +418,9 @@ public:
         addAndMakeVisible(okButton.get());
         
         // Style the button
-        okButton->setColour(juce::TextButton::buttonColourId, juce::Colour(APP_COLOR_PRIMARY));
+        okButton->setColour(juce::TextButton::buttonColourId, APP_COLOR_PRIMARY);
         okButton->setColour(juce::TextButton::textColourOffId, juce::Colours::white);
-        okButton->setColour(juce::TextButton::buttonOnColourId, juce::Colour(APP_COLOR_PRIMARY).brighter(0.2f));
+        okButton->setColour(juce::TextButton::buttonOnColourId, APP_COLOR_PRIMARY.brighter(0.2f));
         
         setSize(400, 200);
     }
@@ -437,7 +438,7 @@ public:
     void paint(juce::Graphics& g) override
     {
         // Background
-        g.fillAll(juce::Colour(APP_COLOR_BACKGROUND));
+        g.fillAll(APP_COLOR_BACKGROUND);
 
         // Title
         g.setColour(juce::Colours::white);
@@ -453,15 +454,15 @@ public:
         {
             juce::Colour iconColour;
             if (iconType == InfoIcon)
-                iconColour = juce::Colour(APP_COLOR_PRIMARY);
+                iconColour = APP_COLOR_PRIMARY;
             else if (iconType == WarningIcon)
-                iconColour = juce::Colour(0xFFFFAA00);
+                iconColour = APP_COLOR_ALERT_WARNING;
             else if (iconType == ErrorIcon)
-                iconColour = juce::Colour(0xFFFF4444);
+                iconColour = APP_COLOR_ALERT_ERROR;
 
             g.setColour(iconColour);
             g.fillEllipse(iconX, iconY, iconSize, iconSize);
-            g.setColour(juce::Colour(APP_COLOR_BACKGROUND));
+            g.setColour(APP_COLOR_BACKGROUND);
             g.setFont(juce::Font(iconSize * 0.6f, juce::Font::bold));
             
             juce::String iconChar;
@@ -498,7 +499,7 @@ private:
     {
     public:
         StyledMessageDialog(juce::Component* parent, const juce::String& title, const juce::String& message, StyledMessageBox::IconType iconType)
-            : juce::DialogWindow(title, juce::Colour(APP_COLOR_BACKGROUND), true)
+            : juce::DialogWindow(title, APP_COLOR_BACKGROUND, true)
         {
             setOpaque(true);
             setUsingNativeTitleBar(false);
@@ -529,7 +530,7 @@ private:
 
         void paint(juce::Graphics& g) override
         {
-            g.fillAll(juce::Colour(APP_COLOR_BACKGROUND));
+            g.fillAll(APP_COLOR_BACKGROUND);
         }
 
     private:

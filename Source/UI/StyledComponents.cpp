@@ -3,54 +3,54 @@
 DarkLookAndFeel::DarkLookAndFeel()
 {
     // PopupMenu
-    setColour(juce::PopupMenu::backgroundColourId, juce::Colour(0xFF3D3D47));
-    setColour(juce::PopupMenu::textColourId, juce::Colours::white);
-    setColour(juce::PopupMenu::highlightedBackgroundColourId, juce::Colour(APP_COLOR_PRIMARY));
+    setColour(juce::PopupMenu::backgroundColourId, APP_COLOR_SURFACE);
+    setColour(juce::PopupMenu::textColourId, APP_COLOR_TEXT_PRIMARY);
+    setColour(juce::PopupMenu::highlightedBackgroundColourId, APP_COLOR_PRIMARY);
     setColour(juce::PopupMenu::highlightedTextColourId, juce::Colours::white);
 
     // ComboBox
-    setColour(juce::ComboBox::backgroundColourId, juce::Colour(0xFF3D3D47));
-    setColour(juce::ComboBox::textColourId, juce::Colours::white);
-    setColour(juce::ComboBox::outlineColourId, juce::Colour(0xFF4A4A55));
-    setColour(juce::ComboBox::arrowColourId, juce::Colour(APP_COLOR_PRIMARY));
-    setColour(juce::ComboBox::focusedOutlineColourId, juce::Colour(APP_COLOR_PRIMARY));
+    setColour(juce::ComboBox::backgroundColourId, APP_COLOR_SURFACE);
+    setColour(juce::ComboBox::textColourId, APP_COLOR_TEXT_PRIMARY);
+    setColour(juce::ComboBox::outlineColourId, APP_COLOR_BORDER);
+    setColour(juce::ComboBox::arrowColourId, APP_COLOR_PRIMARY);
+    setColour(juce::ComboBox::focusedOutlineColourId, APP_COLOR_PRIMARY);
 
     // Label
-    setColour(juce::Label::textColourId, juce::Colours::white);
+    setColour(juce::Label::textColourId, APP_COLOR_TEXT_PRIMARY);
     setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
 
     // TextButton
-    setColour(juce::TextButton::buttonColourId, juce::Colour(0xFF3D3D47));
-    setColour(juce::TextButton::buttonOnColourId, juce::Colour(APP_COLOR_PRIMARY));
-    setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+    setColour(juce::TextButton::buttonColourId, APP_COLOR_SURFACE);
+    setColour(juce::TextButton::buttonOnColourId, APP_COLOR_PRIMARY);
+    setColour(juce::TextButton::textColourOffId, APP_COLOR_TEXT_PRIMARY);
     setColour(juce::TextButton::textColourOnId, juce::Colours::white);
 
     // ListBox
-    setColour(juce::ListBox::backgroundColourId, juce::Colour(0xFF2D2D37));
-    setColour(juce::ListBox::textColourId, juce::Colours::white);
-    setColour(juce::ListBox::outlineColourId, juce::Colour(0xFF4A4A55));
+    setColour(juce::ListBox::backgroundColourId, APP_COLOR_SURFACE_ALT);
+    setColour(juce::ListBox::textColourId, APP_COLOR_TEXT_PRIMARY);
+    setColour(juce::ListBox::outlineColourId, APP_COLOR_BORDER);
 
     // ScrollBar
-    setColour(juce::ScrollBar::thumbColourId, juce::Colour(0xFF5A5A65));
-    setColour(juce::ScrollBar::trackColourId, juce::Colour(0xFF2D2D37));
+    setColour(juce::ScrollBar::thumbColourId, APP_COLOR_PRIMARY.withAlpha(0.5f));
+    setColour(juce::ScrollBar::trackColourId, APP_COLOR_SURFACE_ALT);
 
     // TextEditor
-    setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xFF2D2D37));
-    setColour(juce::TextEditor::textColourId, juce::Colours::white);
-    setColour(juce::TextEditor::outlineColourId, juce::Colour(0xFF4A4A55));
-    setColour(juce::TextEditor::focusedOutlineColourId, juce::Colour(APP_COLOR_PRIMARY));
-    setColour(juce::CaretComponent::caretColourId, juce::Colour(APP_COLOR_PRIMARY));
+    setColour(juce::TextEditor::backgroundColourId, APP_COLOR_SURFACE_ALT);
+    setColour(juce::TextEditor::textColourId, APP_COLOR_TEXT_PRIMARY);
+    setColour(juce::TextEditor::outlineColourId, APP_COLOR_BORDER);
+    setColour(juce::TextEditor::focusedOutlineColourId, APP_COLOR_PRIMARY);
+    setColour(juce::CaretComponent::caretColourId, APP_COLOR_PRIMARY);
 
     // AlertWindow / DialogWindow
-    setColour(juce::AlertWindow::backgroundColourId, juce::Colour(APP_COLOR_BACKGROUND));
-    setColour(juce::AlertWindow::textColourId, juce::Colours::white);
-    setColour(juce::AlertWindow::outlineColourId, juce::Colour(0xFF4A4A55));
+    setColour(juce::AlertWindow::backgroundColourId, APP_COLOR_BACKGROUND);
+    setColour(juce::AlertWindow::textColourId, APP_COLOR_TEXT_PRIMARY);
+    setColour(juce::AlertWindow::outlineColourId, APP_COLOR_BORDER);
 }
 
 void DarkLookAndFeel::drawPopupMenuBackground(juce::Graphics& g, int width, int height)
 {
-    g.fillAll(juce::Colour(0xFF3D3D47));
-    g.setColour(juce::Colour(0xFF4A4A55));
+    g.fillAll(APP_COLOR_SURFACE);
+    g.setColour(APP_COLOR_BORDER);
     g.drawRect(0, 0, width, height, 1);
 }
 
@@ -65,7 +65,7 @@ void DarkLookAndFeel::drawPopupMenuItem(juce::Graphics& g, const juce::Rectangle
     if (isSeparator)
     {
         auto r = area.reduced(5, 0).withHeight(1).withY(area.getCentreY());
-        g.setColour(juce::Colour(0xFF4A4A55));
+        g.setColour(APP_COLOR_BORDER_SUBTLE);
         g.fillRect(r);
         return;
     }
@@ -74,13 +74,13 @@ void DarkLookAndFeel::drawPopupMenuItem(juce::Graphics& g, const juce::Rectangle
 
     if (isHighlighted && isActive)
     {
-        g.setColour(juce::Colour(APP_COLOR_PRIMARY));
+        g.setColour(APP_COLOR_PRIMARY);
         g.fillRect(area);
         g.setColour(juce::Colours::white);
     }
     else
     {
-        g.setColour(isActive ? juce::Colours::white : juce::Colours::grey);
+        g.setColour(isActive ? APP_COLOR_TEXT_PRIMARY : APP_COLOR_TEXT_MUTED);
     }
 
     g.setFont(juce::Font(15.0f));
@@ -109,7 +109,7 @@ void DarkLookAndFeel::drawTickBox(juce::Graphics& g, juce::Component& component,
 
     if (ticked)
     {
-        g.setColour(juce::Colour(APP_COLOR_PRIMARY));
+        g.setColour(APP_COLOR_PRIMARY);
         g.fillRoundedRectangle(boxBounds, cornerSize);
 
         g.setColour(juce::Colours::white);
@@ -123,7 +123,7 @@ void DarkLookAndFeel::drawTickBox(juce::Graphics& g, juce::Component& component,
     else
     {
         auto alpha = isEnabled ? (shouldDrawButtonAsHighlighted ? 1.0f : 0.7f) : 0.4f;
-        g.setColour(juce::Colour(0xFF4A4A55).withAlpha(alpha));
+        g.setColour(APP_COLOR_BORDER.withAlpha(alpha));
         g.drawRoundedRectangle(boxBounds, cornerSize, 1.5f);
     }
 }

@@ -1,11 +1,12 @@
 #include "ScrollZoomController.h"
+#include "../../Utils/Theme.h"
 
 ScrollZoomController::ScrollZoomController() {
     horizontalScrollBar.addListener(this);
     verticalScrollBar.addListener(this);
 
-    auto thumbColor = juce::Colour(APP_COLOR_PRIMARY).withAlpha(0.6f);
-    auto trackColor = juce::Colour(0xFF252530);
+    auto thumbColor = APP_COLOR_PRIMARY.withAlpha(0.6f);
+    auto trackColor = APP_COLOR_SURFACE_ALT;
 
     horizontalScrollBar.setColour(juce::ScrollBar::thumbColourId, thumbColor);
     horizontalScrollBar.setColour(juce::ScrollBar::trackColourId, trackColor);

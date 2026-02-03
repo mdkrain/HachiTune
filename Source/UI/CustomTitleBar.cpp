@@ -1,29 +1,31 @@
 #include "CustomTitleBar.h"
+#include "../Utils/Constants.h"
+#include "../Utils/Theme.h"
 
 // Window button colors
 namespace TitleBarColors {
 #if JUCE_MAC
-    constexpr juce::uint32 closeNormal = 0xFFFF5F57;
-    constexpr juce::uint32 closeHover = 0xFFFF5F57;
-    constexpr juce::uint32 minimizeNormal = 0xFFFEBC2E;
-    constexpr juce::uint32 minimizeHover = 0xFFFEBC2E;
-    constexpr juce::uint32 maximizeNormal = 0xFF28C840;
-    constexpr juce::uint32 maximizeHover = 0xFF28C840;
+    const juce::Colour closeNormal = APP_COLOR_TITLEBAR_CLOSE_MAC;
+    const juce::Colour closeHover = APP_COLOR_TITLEBAR_CLOSE_MAC;
+    const juce::Colour minimizeNormal = APP_COLOR_TITLEBAR_MINIMIZE_MAC;
+    const juce::Colour minimizeHover = APP_COLOR_TITLEBAR_MINIMIZE_MAC;
+    const juce::Colour maximizeNormal = APP_COLOR_TITLEBAR_MAXIMIZE_MAC;
+    const juce::Colour maximizeHover = APP_COLOR_TITLEBAR_MAXIMIZE_MAC;
     constexpr int buttonSize = 12;
     constexpr int buttonSpacing = 8;
     constexpr int buttonMargin = 12;
 #else
-    constexpr juce::uint32 closeNormal = 0xFF3A3A45;
-    constexpr juce::uint32 closeHover = 0xFFE81123;
-    constexpr juce::uint32 minimizeNormal = 0xFF3A3A45;
-    constexpr juce::uint32 minimizeHover = 0xFF4A4A55;
-    constexpr juce::uint32 maximizeNormal = 0xFF3A3A45;
-    constexpr juce::uint32 maximizeHover = 0xFF4A4A55;
+    const juce::Colour closeNormal = APP_COLOR_SURFACE;
+    const juce::Colour closeHover = APP_COLOR_TITLEBAR_CLOSE_HOVER;
+    const juce::Colour minimizeNormal = APP_COLOR_SURFACE;
+    const juce::Colour minimizeHover = APP_COLOR_SURFACE_RAISED;
+    const juce::Colour maximizeNormal = APP_COLOR_SURFACE;
+    const juce::Colour maximizeHover = APP_COLOR_SURFACE_RAISED;
     constexpr int buttonWidth = 46;
     constexpr int buttonHeight = 32;
 #endif
-    constexpr juce::uint32 background = 0xFF1E1E28;
-    constexpr juce::uint32 titleText = 0xFFCCCCCC;
+    const juce::Colour background = APP_COLOR_SURFACE_ALT;
+    const juce::Colour titleText = APP_COLOR_TEXT_PRIMARY;
 }
 
 // WindowButton implementation
@@ -41,9 +43,9 @@ void CustomTitleBar::WindowButton::paintButton(juce::Graphics& g, bool isMouseOv
     // macOS traffic light style
     juce::Colour baseColor;
     switch (buttonType) {
-        case Close: baseColor = juce::Colour(TitleBarColors::closeNormal); break;
-        case Minimize: baseColor = juce::Colour(TitleBarColors::minimizeNormal); break;
-        case Maximize: baseColor = juce::Colour(TitleBarColors::maximizeNormal); break;
+        case Close: baseColor = TitleBarColors::closeNormal; break;
+        case Minimize: baseColor = TitleBarColors::minimizeNormal; break;
+        case Maximize: baseColor = TitleBarColors::maximizeNormal; break;
     }
 
     if (isButtonDown)
@@ -77,12 +79,12 @@ void CustomTitleBar::WindowButton::paintButton(juce::Graphics& g, bool isMouseOv
     juce::Colour bgColor;
     switch (buttonType) {
         case Close:
-            bgColor = isMouseOver ? juce::Colour(TitleBarColors::closeHover)
-                                  : juce::Colour(TitleBarColors::closeNormal);
+            bgColor = isMouseOver ? TitleBarColors::closeHover
+                                  : TitleBarColors::closeNormal;
             break;
         default:
-            bgColor = isMouseOver ? juce::Colour(TitleBarColors::minimizeHover)
-                                  : juce::Colour(TitleBarColors::minimizeNormal);
+            bgColor = isMouseOver ? TitleBarColors::minimizeHover
+                                  : TitleBarColors::minimizeNormal;
             break;
     }
 
@@ -93,7 +95,7 @@ void CustomTitleBar::WindowButton::paintButton(juce::Graphics& g, bool isMouseOv
     g.fillRect(bounds);
 
     // Draw icon
-    g.setColour(juce::Colour(0xFFCCCCCC));
+    g.setColour(APP_COLOR_TEXT_PRIMARY);
     auto center = bounds.getCentre();
     float iconSize = 5.0f;
 
@@ -138,9 +140,9 @@ CustomTitleBar::~CustomTitleBar() = default;
 
 void CustomTitleBar::paint(juce::Graphics& g)
 {
-    g.fillAll(juce::Colour(TitleBarColors::background));
+    g.fillAll(TitleBarColors::background);
 
-    g.setColour(juce::Colour(TitleBarColors::titleText));
+    g.setColour(TitleBarColors::titleText);
     g.setFont(14.0f);
 
 #if JUCE_MAC
@@ -152,7 +154,7 @@ void CustomTitleBar::paint(juce::Graphics& g)
 #endif
 
     // Bottom border
-    g.setColour(juce::Colour(0xFF3A3A45));
+    g.setColour(APP_COLOR_BORDER_SUBTLE);
     g.drawHorizontalLine(getHeight() - 1, 0, static_cast<float>(getWidth()));
 }
 
