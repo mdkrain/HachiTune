@@ -140,7 +140,13 @@ MainComponent::MainComponent(bool enableAudioDevice)
     if (isPluginMode() && onPitchEditFinished)
       onPitchEditFinished();
   };
-  pianoRoll.onZoomChanged = [this](float pps) { onZoomChanged(pps); };
+  pianoRoll.onZoomChanged = [this](float pps) {
+    onZoomChanged(pps);
+    pianoRollView.refreshOverview();
+  };
+  pianoRoll.onScrollChanged = [this](double) {
+    pianoRollView.refreshOverview();
+  };
   pianoRoll.onLoopRangeChanged = [this](const LoopRange &range) {
     toolbar.setLoopEnabled(range.enabled);
     if (auto *audioEngine = editorController
@@ -1197,6 +1203,7 @@ void MainComponent::onZoomChanged(float pixelsPerSecond) {
   // Update all components with zoom centered on cursor
   pianoRoll.setPixelsPerSecond(pixelsPerSecond, true);
   toolbar.setZoom(pixelsPerSecond);
+  pianoRollView.refreshOverview();
 
   isSyncingZoom = false;
 }

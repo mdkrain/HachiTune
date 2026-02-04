@@ -281,6 +281,9 @@ void HachiTuneDocumentController::processAudioSource(
                                      sourceSampleRate, state, jobId]() mutable {
       if (safeMain == nullptr)
         return;
+      auto *view = dynamic_cast<IMainView *>(safeMain.getComponent());
+      if (!view)
+        return;
       if (!state)
         return;
       if (state->jobId.load() != jobId)

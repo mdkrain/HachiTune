@@ -165,6 +165,12 @@ void PianoRollWorkspaceView::setProject(Project *project)
   overviewPanel.setProject(project);
 }
 
+void PianoRollWorkspaceView::refreshOverview()
+{
+  if (overviewVisible)
+    overviewPanel.repaint();
+}
+
 void PianoRollWorkspaceView::updateOverviewVisibility()
 {
   overviewCard.setVisible(overviewVisible);

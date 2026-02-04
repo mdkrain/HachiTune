@@ -1719,11 +1719,18 @@ void PianoRollComponent::mouseWheelMove(const juce::MouseEvent &e,
                                         const juce::MouseWheelDetails &wheel) {
   float scrollMultiplier = wheel.isSmooth ? 200.0f : 80.0f;
   const int visibleHeight = getVisibleContentHeight();
+  const int visibleWidth = getVisibleContentWidth();
+  const double totalTime = project ? project->getAudioData().getDuration() : 0.0;
   const float minPpsForFill =
       visibleHeight > 0
           ? static_cast<float>(visibleHeight) / (MAX_MIDI_NOTE - MIN_MIDI_NOTE + 1)
           : MIN_PIXELS_PER_SEMITONE;
   const float minPps = std::max(MIN_PIXELS_PER_SEMITONE, minPpsForFill);
+  const float minPpsX =
+      (visibleWidth > 0 && totalTime > 0.0)
+          ? std::max(MIN_PIXELS_PER_SECOND,
+                     static_cast<float>(visibleWidth / totalTime))
+          : MIN_PIXELS_PER_SECOND;
 
   bool isOverPianoKeys = e.x < pianoKeysWidth;
   bool isOverTimeline = e.y < headerHeight;
@@ -1768,7 +1775,7 @@ void PianoRollComponent::mouseWheelMove(const juce::MouseEvent &e,
       float zoomFactor = 1.0f + wheel.deltaY * 0.3f;
       float newPps = pixelsPerSecond * zoomFactor;
       newPps =
-          juce::jlimit(MIN_PIXELS_PER_SECOND, MAX_PIXELS_PER_SECOND, newPps);
+          juce::jlimit(minPpsX, MAX_PIXELS_PER_SECOND, newPps);
       pixelsPerSecond = newPps;
       coordMapper->setPixelsPerSecond(newPps);
 
@@ -1841,7 +1848,7 @@ void PianoRollComponent::mouseWheelMove(const juce::MouseEvent &e,
 
       float newPps = pixelsPerSecond * zoomFactor;
       newPps =
-          juce::jlimit(MIN_PIXELS_PER_SECOND, MAX_PIXELS_PER_SECOND, newPps);
+          juce::jlimit(minPpsX, MAX_PIXELS_PER_SECOND, newPps);
 
       // Adjust scroll to keep mouse position stable
       float newMouseX = static_cast<float>(timeAtMouse * newPps);
@@ -1862,11 +1869,18 @@ void PianoRollComponent::mouseWheelMove(const juce::MouseEvent &e,
 void PianoRollComponent::mouseMagnify(const juce::MouseEvent &e,
                                       float scaleFactor) {
   // Pinch-to-zoom on trackpad - horizontal zoom, center on mouse position
+  const int visibleWidth = getVisibleContentWidth();
+  const double totalTime = project ? project->getAudioData().getDuration() : 0.0;
+  const float minPpsX =
+      (visibleWidth > 0 && totalTime > 0.0)
+          ? std::max(MIN_PIXELS_PER_SECOND,
+                     static_cast<float>(visibleWidth / totalTime))
+          : MIN_PIXELS_PER_SECOND;
   float mouseX = static_cast<float>(e.x - pianoKeysWidth);
   double timeAtMouse = xToTime(mouseX + static_cast<float>(scrollX));
 
   float newPps = pixelsPerSecond * scaleFactor;
-  newPps = juce::jlimit(MIN_PIXELS_PER_SECOND, MAX_PIXELS_PER_SECOND, newPps);
+  newPps = juce::jlimit(minPpsX, MAX_PIXELS_PER_SECOND, newPps);
 
   // Adjust scroll to keep mouse position stable
   float newMouseX = static_cast<float>(timeAtMouse * newPps);
@@ -1973,8 +1987,15 @@ void PianoRollComponent::setCursorTime(double time) {
 
 void PianoRollComponent::setPixelsPerSecond(float pps, bool centerOnCursor) {
   float oldPps = pixelsPerSecond;
+  const int visibleWidth = getVisibleContentWidth();
+  const double totalTime = project ? project->getAudioData().getDuration() : 0.0;
+  const float minPpsX =
+      (visibleWidth > 0 && totalTime > 0.0)
+          ? std::max(MIN_PIXELS_PER_SECOND,
+                     static_cast<float>(visibleWidth / totalTime))
+          : MIN_PIXELS_PER_SECOND;
   float newPps =
-      juce::jlimit(MIN_PIXELS_PER_SECOND, MAX_PIXELS_PER_SECOND, pps);
+      juce::jlimit(minPpsX, MAX_PIXELS_PER_SECOND, pps);
 
   if (std::abs(oldPps - newPps) < 0.01f)
     return; // No significant change

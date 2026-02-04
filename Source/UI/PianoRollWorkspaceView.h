@@ -15,6 +15,7 @@ public:
   void timerCallback() override;
 
   void setProject(Project *project);
+  void refreshOverview();
   PianoRollComponent &getPianoRoll() { return pianoRoll; }
 
 private:
