@@ -14,6 +14,7 @@ option(USE_ASIO "Enable ASIO support (Windows only)" OFF)
 set(CUDA_REDIST_URL "" CACHE STRING "Optional URL to download CUDA runtime redistributable zip")
 set(DIRECTML_REDIST_URL "" CACHE STRING "Optional URL to download DirectML redistributable zip")
 set(ONNXRUNTIME_VERSION "1.17.3" CACHE STRING "ONNX Runtime version")
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # Check that CUDA and DirectML are not both enabled
 if(USE_CUDA AND USE_DIRECTML)
